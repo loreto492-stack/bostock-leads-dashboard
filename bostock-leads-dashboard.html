@@ -965,10 +965,7 @@
           <div class="sub">What we paid Google directly</div>
         </div>
         <div class="ads-kpi">
-          <div class="label">
-            Agency management fee
-            <button type="button" id="edit-agency-fees" class="kpi-edit-btn" title="Edit agency fees per month" aria-label="Edit agency fees">✎</button>
-          </div>
+          <div class="label">Agency management fee</div>
           <div class="value" id="ads-agency">$0</div>
           <div class="sub">What we paid the agency to run the campaigns</div>
         </div>
@@ -2790,7 +2787,7 @@ function openAgencyForm() {
 
 function closeAgencyForm() { agencyModal.hidden = true; }
 
-document.getElementById('edit-agency-fees').addEventListener('click', openAgencyForm);
+document.getElementById('edit-agency-fees')?.addEventListener('click', openAgencyForm);
 document.getElementById('agency-form-cancel').addEventListener('click', closeAgencyForm);
 agencyModal.addEventListener('click', (e) => { if (e.target === agencyModal) closeAgencyForm(); });
 
