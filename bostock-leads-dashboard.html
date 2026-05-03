@@ -881,15 +881,15 @@
       <div class="ads-header">
         <div>
           <h2 style="margin:0;">Google Ads Performance</h2>
-          <div class="ads-subtitle">How much we spent on Google Ads each month and what we got back: phone calls and online enquiries.</div>
+          <div class="ads-subtitle">What it costs us to run Google Ads each month — Google's media spend <strong>plus</strong> our agency's management fee — and the enquiries we received in return.</div>
         </div>
         <button type="button" id="add-ads-month" class="upload-btn" style="font-size:13px;padding:7px 12px;">+ Add monthly data</button>
       </div>
       <div class="ads-kpi-grid">
         <div class="ads-kpi primary">
-          <div class="label">Ad spend</div>
-          <div class="value" id="ads-cost">$0</div>
-          <div class="sub">What we paid Google</div>
+          <div class="label">Total marketing cost</div>
+          <div class="value" id="ads-total-cost">$0</div>
+          <div class="sub">Google ad spend + agency management fee</div>
         </div>
         <div class="ads-kpi primary">
           <div class="label">New enquiries from ads</div>
@@ -899,7 +899,17 @@
         <div class="ads-kpi primary">
           <div class="label">Cost per enquiry</div>
           <div class="value" id="ads-costconv">$0</div>
-          <div class="sub">Spend ÷ enquiries — efficiency</div>
+          <div class="sub">Total cost ÷ enquiries — true efficiency</div>
+        </div>
+        <div class="ads-kpi">
+          <div class="label">Google ad spend</div>
+          <div class="value" id="ads-cost">$0</div>
+          <div class="sub">What we paid Google directly</div>
+        </div>
+        <div class="ads-kpi">
+          <div class="label">Agency management fee</div>
+          <div class="value" id="ads-agency">$0</div>
+          <div class="sub">What we paid the agency to run the campaigns</div>
         </div>
         <div class="ads-kpi">
           <div class="label">Phone calls from ads</div>
@@ -927,13 +937,15 @@
           <thead>
             <tr>
               <th>Month</th>
-              <th>Ad spend</th>
-              <th>New enquiries</th>
+              <th>Google spend</th>
+              <th>Agency fee</th>
+              <th>Total cost</th>
+              <th>Enquiries</th>
               <th>Cost per enquiry</th>
               <th>Phone calls</th>
               <th>Ad clicks</th>
               <th>Ad views</th>
-              <th>Click-through</th>
+              <th>CTR</th>
               <th class="col-actions"></th>
             </tr>
           </thead>
@@ -1062,8 +1074,11 @@
         <label>Reporting month
           <input type="month" id="ads-form-month" required />
         </label>
-        <label>Total ad spend ($)<span class="hint">What we paid Google this month</span>
+        <label>Google ad spend ($)<span class="hint">What we paid Google directly this month — the "Cost" line on the agency report</span>
           <input type="number" id="ads-form-cost" min="0" step="0.01" required />
+        </label>
+        <label>Agency management fee ($)<span class="hint">What the agency invoiced us this month to run the Google Ads campaigns. Leave 0 if you don't track it separately.</span>
+          <input type="number" id="ads-form-agency" min="0" step="0.01" />
         </label>
         <label>New enquiries<span class="hint">Phone calls + online forms (the "Conv." number on the agency report)</span>
           <input type="number" id="ads-form-conv" min="0" step="1" />
@@ -1865,14 +1880,16 @@ function getActiveAdsRecords() {
 }
 
 function adsTotals(records) {
-  const t = { clicks: 0, impressions: 0, cost: 0, phoneCalls: 0, conversions: 0 };
+  const t = { clicks: 0, impressions: 0, cost: 0, agencyFee: 0, phoneCalls: 0, conversions: 0 };
   for (const r of records) {
     t.clicks       += Number(r.clicks)       || 0;
     t.impressions  += Number(r.impressions)  || 0;
     t.cost         += Number(r.cost)         || 0;
+    t.agencyFee    += Number(r.agencyFee)    || 0;   // agency management fee (may be missing on old records)
     t.phoneCalls   += Number(r.phoneCalls)   || 0;
     t.conversions  += Number(r.conversions)  || 0;
   }
+  t.totalCost = t.cost + t.agencyFee;  // headline cost figure
   return t;
 }
 
@@ -1888,14 +1905,18 @@ function fmtMonthLabel(monthKey) {
 function renderAdsKPIs() {
   const t = adsTotals(getActiveAdsRecords());
   const ctr      = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0;
-  const costPerC = t.conversions > 0 ? (t.cost / t.conversions) : 0;
+  // Cost per enquiry is based on TOTAL cost (Google spend + agency fee)
+  // so the boss-facing efficiency number reflects the true cost to the business.
+  const costPerC = t.conversions > 0 ? (t.totalCost / t.conversions) : 0;
+  document.getElementById('ads-total-cost').textContent  = fmtMoney(t.totalCost);
+  document.getElementById('ads-cost').textContent        = fmtMoney(t.cost);
+  document.getElementById('ads-agency').textContent      = fmtMoney(t.agencyFee);
+  document.getElementById('ads-conv').textContent        = fmtNum(t.conversions);
+  document.getElementById('ads-costconv').textContent    = costPerC > 0 ? fmtMoney(costPerC) : '—';
+  document.getElementById('ads-calls').textContent       = fmtNum(t.phoneCalls);
   document.getElementById('ads-clicks').textContent      = fmtNum(t.clicks);
   document.getElementById('ads-impressions').textContent = fmtNum(t.impressions);
   document.getElementById('ads-ctr').textContent         = fmtPct(ctr);
-  document.getElementById('ads-cost').textContent        = fmtMoney(t.cost);
-  document.getElementById('ads-calls').textContent       = fmtNum(t.phoneCalls);
-  document.getElementById('ads-conv').textContent        = fmtNum(t.conversions);
-  document.getElementById('ads-costconv').textContent    = costPerC > 0 ? fmtMoney(costPerC) : '—';
 }
 
 function renderAdsChart() {
@@ -1936,12 +1957,16 @@ function renderAdsTable() {
     return;
   }
   tbody.innerHTML = sorted.map(r => {
-    const ctr = r.impressions > 0 ? (r.clicks / r.impressions) * 100 : 0;
-    const cpe = r.conversions > 0 ? (r.cost / r.conversions) : 0;
+    const agency    = Number(r.agencyFee) || 0;
+    const totalCost = (Number(r.cost) || 0) + agency;
+    const ctr       = r.impressions > 0 ? (r.clicks / r.impressions) * 100 : 0;
+    const cpe       = r.conversions > 0 ? (totalCost / r.conversions) : 0;
     return `
       <tr data-month="${escapeAttr(r.month)}">
         <td>${escapeHtml(fmtMonthLabel(r.month))}</td>
         <td>${fmtMoney(r.cost)}</td>
+        <td>${fmtMoney(agency)}</td>
+        <td><strong>${fmtMoney(totalCost)}</strong></td>
         <td>${fmtNum(r.conversions || 0)}</td>
         <td>${cpe > 0 ? fmtMoney(cpe) : '—'}</td>
         <td>${fmtNum(r.phoneCalls || 0)}</td>
@@ -2628,6 +2653,7 @@ function openAdsForm(month) {
   adsForm.querySelector('#ads-form-clicks').value       = existing ? existing.clicks : '';
   adsForm.querySelector('#ads-form-impressions').value  = existing ? existing.impressions : '';
   adsForm.querySelector('#ads-form-cost').value         = existing ? existing.cost : '';
+  adsForm.querySelector('#ads-form-agency').value       = existing ? (existing.agencyFee || 0) : '';
   adsForm.querySelector('#ads-form-phonecalls').value   = existing ? (existing.phoneCalls || 0) : '';
   adsForm.querySelector('#ads-form-conv').value         = existing ? (existing.conversions || 0) : '';
   adsModal.hidden = false;
@@ -2646,6 +2672,7 @@ adsForm.addEventListener('submit', (e) => {
     clicks:       Number(adsForm.querySelector('#ads-form-clicks').value)      || 0,
     impressions:  Number(adsForm.querySelector('#ads-form-impressions').value) || 0,
     cost:         Number(adsForm.querySelector('#ads-form-cost').value)        || 0,
+    agencyFee:    Number(adsForm.querySelector('#ads-form-agency').value)      || 0,
     phoneCalls:   Number(adsForm.querySelector('#ads-form-phonecalls').value)  || 0,
     conversions:  Number(adsForm.querySelector('#ads-form-conv').value)        || 0,
   };
