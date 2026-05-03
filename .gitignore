@@ -1,0 +1,18 @@
+# Customer / lead data — never commit
+*.xlsx
+*.xls
+*.csv
+bostock-leads-backup-*.json
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Node (the local _server.js doesn't need any deps, but just in case)
+node_modules/

@@ -1,0 +1,2720 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bostock Leads Dashboard</title>
+
+  <!-- SheetJS: in-browser Excel parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Chart.js: charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* ---------- Design tokens (light / dark) ---------- */
+    :root {
+      --bg:        #f5f7fa;
+      --surface:   #ffffff;
+      --surface-2: #f0f2f5;
+      --border:    #e3e6eb;
+      --text:      #1f2937;
+      --text-soft: #5b6472;
+      --accent:    #2563eb;
+      --accent-soft: #dbeafe;
+      --danger:    #dc2626;
+      --danger-bg: #fee2e2;
+
+      /* chart palette: calm business colours */
+      --c-current:  #2563eb;
+      --c-building: #059669;
+      --c-followup: #d97706;
+      --c-nofollow: #dc2626;
+      --c-other:    #6b7280;
+    }
+    html[data-theme="dark"] {
+      --bg:        #0f1420;
+      --surface:   #161c2c;
+      --surface-2: #1e2638;
+      --border:    #2a3348;
+      --text:      #e5e9f0;
+      --text-soft: #9aa3b8;
+      --accent:    #60a5fa;
+      --accent-soft: #1e3a8a;
+      --danger:    #f87171;
+      --danger-bg: #3a1313;
+
+      --c-current:  #60a5fa;
+      --c-building: #34d399;
+      --c-followup: #fbbf24;
+      --c-nofollow: #f87171;
+      --c-other:    #9ca3af;
+    }
+
+    /* ---------- Base ---------- */
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    h1, h2, h3 { margin: 0; font-weight: 600; }
+    h2 { font-size: 15px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px; }
+    a { color: var(--accent); }
+
+    /* ---------- Header ---------- */
+    header.app-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 28px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 24px;
+    }
+    .brand { display: flex; align-items: center; }
+    .brand-logo { height: 84px; width: auto; display: block; }
+    .title-block { text-align: center; min-width: 0; }
+    .title-block h1 { font-size: 22px; margin: 0; letter-spacing: 0.01em; }
+    .title-meta {
+      font-size: 12px;
+      color: var(--text-soft);
+      margin-top: 2px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    #save-status {
+      color: #059669;
+      font-weight: 500;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    #save-status.saved-flash { opacity: 1; }
+    html[data-theme="dark"] #save-status { color: #34d399; }
+
+    .upload-btn, .toggle-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .toggle-btn {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .upload-btn:hover { filter: brightness(1.05); }
+    .toggle-btn:hover { background: var(--border); }
+    input[type="file"] { display: none; }
+
+    /* ---------- Layout ---------- */
+    main { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    section { margin-bottom: 28px; }
+
+    /* ---------- Empty / error states ---------- */
+    .empty-state {
+      background: var(--surface);
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 60px 24px;
+      text-align: center;
+      color: var(--text-soft);
+    }
+    .empty-state strong { color: var(--text); font-size: 16px; display: block; margin-bottom: 6px; }
+    .error-banner {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border: 1px solid var(--danger);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-weight: 500;
+    }
+
+    /* ---------- Period selector ---------- */
+    .period-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      flex-wrap: wrap;
+    }
+    .period-bar label { color: var(--text-soft); font-size: 13px; }
+    .period-bar select {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 14px;
+      font-weight: 500;
+      min-width: 240px;
+    }
+    .period-hint { font-size: 12px; color: var(--text-soft); }
+
+    /* ---------- KPI cards ---------- */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+    }
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      cursor: pointer;
+      transition: transform 0.08s ease, box-shadow 0.08s ease, border-color 0.08s ease;
+      user-select: none;
+    }
+    .kpi:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .kpi .hint {
+      font-size: 11px;
+      color: var(--text-soft);
+      margin-top: 4px;
+      opacity: 0.7;
+    }
+    .kpi .label { font-size: 12px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+    .kpi .value { font-size: 32px; font-weight: 600; margin-top: 6px; }
+    .kpi.total  .value { color: var(--c-current); }
+    .kpi.current .value { color: var(--c-current); }
+    .kpi.building .value { color: var(--c-building); }
+    .kpi.followup .value { color: var(--c-followup); }
+    .kpi.nofollow .value { color: var(--c-nofollow); }
+
+    /* ---------- Charts grid ---------- */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 18px;
+    }
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      min-height: 320px;
+      display: flex;
+      flex-direction: column;
+    }
+    .chart-card .chart-wrap { flex: 1; position: relative; min-height: 260px; }
+    .chart-caption { font-size: 11px; color: var(--text-soft); margin-top: 6px; text-align: center; }
+
+    /* ---------- Tables ---------- */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead th {
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-soft);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 10px;
+      background: var(--surface-2);
+      position: sticky;
+      top: 0;
+    }
+    tbody td {
+      border-bottom: 1px solid var(--border);
+      padding: 8px 10px;
+      vertical-align: top;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    .table-scroll { max-height: 480px; overflow-y: auto; }
+
+    /* ---------- Filters ---------- */
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .filters label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--text-soft);
+      font-weight: 500;
+    }
+    .filters select {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+    .filter-summary {
+      font-size: 12px;
+      color: var(--text-soft);
+      margin: 4px 0 10px;
+    }
+
+    /* ---------- Google Ads section ---------- */
+    .ads-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .ads-subtitle { color: var(--text-soft); font-size: 13px; margin-top: 4px; max-width: 720px; }
+    .ads-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+    .ads-kpi {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .ads-kpi.primary {
+      background: var(--surface);
+      border: 1.5px solid var(--accent);
+    }
+    .ads-kpi .label { font-size: 11px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+    .ads-kpi .value { font-size: 22px; font-weight: 600; margin-top: 4px; color: var(--text); }
+    .ads-kpi.primary .value { color: var(--accent); font-size: 26px; }
+    .ads-kpi .sub { font-size: 11px; color: var(--text-soft); margin-top: 4px; line-height: 1.3; }
+
+    /* Per-campaign cards in the Facebook section */
+    .fb-campaigns-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .fb-campaign {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .fb-campaign h3 { font-size: 14px; margin: 0 0 4px; font-weight: 600; }
+    .fb-camp-desc  { font-size: 12px; color: var(--text-soft); margin: 0 0 12px; line-height: 1.35; }
+    .fb-camp-kpis {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .fb-camp-kpis > div { display: flex; flex-direction: column; gap: 2px; }
+    .fb-camp-kpis .label { font-size: 10px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+    .fb-camp-kpis .value { font-size: 16px; font-weight: 600; color: var(--text); }
+    .fb-camp-detail { font-size: 11px; color: var(--text-soft); border-top: 1px dashed var(--border); padding-top: 8px; }
+
+    /* Modal overlay for the Add/Edit form */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+    }
+    .modal-card {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px 24px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.18);
+    }
+    .modal-card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+    .modal-help { color: var(--text-soft); font-size: 12px; margin: 0 0 14px; line-height: 1.4; }
+    .modal-card form { display: flex; flex-direction: column; gap: 10px; }
+    .modal-card label {
+      display: flex;
+      flex-direction: column;
+      font-size: 13px;
+      color: var(--text);
+      gap: 3px;
+      font-weight: 500;
+    }
+    .modal-card label .hint {
+      display: block;
+      font-size: 11px;
+      color: var(--text-soft);
+      font-weight: 400;
+      margin-top: 1px;
+      margin-bottom: 4px;
+    }
+    .modal-card input[type="number"],
+    .modal-card input[type="month"] {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .modal-card input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    /* ---------- Inline editable row fields ---------- */
+    .row-input {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      width: 100%;
+      min-width: 80px;
+    }
+    .row-input:hover  { border-color: var(--border); }
+    .row-input:focus  { border-color: var(--accent); background: var(--surface); outline: none; }
+
+    .row-select {
+      font: inherit;
+      font-size: 13px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+    /* Colour the category select like the old status pill */
+    .cat-select[data-cat="Current Leads"]       { color: var(--c-current);  border-color: var(--c-current); }
+    .cat-select[data-cat="Building a Pool"]  { color: var(--c-building); border-color: var(--c-building); }
+    .cat-select[data-cat="Follow Up Leads"]     { color: var(--c-followup); border-color: var(--c-followup); }
+    .cat-select[data-cat="No Follow Up"]        { color: var(--c-nofollow); border-color: var(--c-nofollow); }
+    .cat-select[data-cat="Other"],
+    .cat-select[data-cat="Unknown"]             { color: var(--c-other);    border-color: var(--c-other); }
+
+    /* ---------- Row actions (delete) ---------- */
+    th.col-actions, td.col-actions { width: 36px; text-align: center; padding: 4px; }
+    button.row-delete {
+      background: transparent;
+      color: var(--text-soft);
+      border: 1px solid transparent;
+      border-radius: 4px;
+      width: 24px;
+      height: 24px;
+      line-height: 1;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 0;
+    }
+    button.row-delete:hover {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+    button.row-edit {
+      background: transparent;
+      color: var(--text-soft);
+      border: 1px solid transparent;
+      border-radius: 4px;
+      width: 24px;
+      height: 24px;
+      line-height: 1;
+      font-size: 13px;
+      cursor: pointer;
+      padding: 0;
+      margin-right: 2px;
+    }
+    button.row-edit:hover {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    td.col-actions { white-space: nowrap; }
+
+    /* ---------- Status pill ---------- */
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+      background: var(--surface-2);
+      color: var(--text-soft);
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .pill[data-cat="Current Leads"]       { color: var(--c-current);  border-color: var(--c-current); }
+    .pill[data-cat="Building a Pool"]  { color: var(--c-building); border-color: var(--c-building); }
+    .pill[data-cat="Follow Up Leads"]     { color: var(--c-followup); border-color: var(--c-followup); }
+    .pill[data-cat="No Follow Up"]        { color: var(--c-nofollow); border-color: var(--c-nofollow); }
+    .pill[data-cat="Other"],
+    .pill[data-cat="Unknown"]             { color: var(--c-other);    border-color: var(--c-other); }
+
+    /* ---------- Debug panel ---------- */
+    details.debug {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+    }
+    details.debug summary {
+      cursor: pointer;
+      font-weight: 600;
+      padding: 4px 0;
+      outline: none;
+    }
+    details.debug .debug-body { margin-top: 12px; font-size: 13px; color: var(--text-soft); }
+    details.debug code {
+      background: var(--surface-2);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+    details.debug h3 { font-size: 13px; color: var(--text); margin: 14px 0 6px; }
+    .debug-list { margin: 0; padding-left: 20px; }
+
+    /* hidden utility */
+    [hidden] { display: none !important; }
+
+    /* ---------- Responsive tweaks ---------- */
+    @media (max-width: 800px) {
+      main { padding: 16px; }
+      header.app-header {
+        grid-template-columns: 1fr;
+        padding: 12px 16px;
+        text-align: center;
+      }
+      .brand { justify-content: center; }
+      .actions { justify-content: center; }
+      .title-block h1 { font-size: 16px; }
+    }
+
+    /* ---------- Print-only helpers (hidden on screen) ---------- */
+    .print-only { display: none; }
+
+    /* ---------- Print / PDF export ----------
+     * Forces a clean light-themed layout regardless of theme, hides controls
+     * that don't belong in a report, and keeps each chart/card together on
+     * a single page where possible. User triggers via "Download PDF" and
+     * chooses "Save as PDF" in the browser's print dialog. */
+    @media print {
+      /* Force a light palette so the PDF is readable and ink-friendly */
+      :root, html[data-theme="dark"] {
+        --bg:        #ffffff;
+        --surface:   #ffffff;
+        --surface-2: #f5f7fa;
+        --border:    #d0d4da;
+        --text:      #1f2937;
+        --text-soft: #4b5563;
+        --accent:    #2563eb;
+      }
+      @page { margin: 8mm; size: A4 portrait; }
+      body { background: #fff !important; font-size: 9pt; }
+      html, body { width: auto; }
+
+      /* Hide anything interactive that doesn't belong in a report.
+       * Preview table is also hidden — the report stays focused on visuals. */
+      header.app-header,
+      #period-section,
+      #empty-state,
+      #error-banner,
+      #debug-section,
+      #preview-section,
+      #ads-section,
+      #fb-section,
+      .modal-overlay,
+      .filters,
+      .upload-btn,
+      .toggle-btn,
+      input[type="file"],
+      #merge-status,
+      #save-status,
+      #file-name { display: none !important; }
+
+      .print-only { display: block; }
+      #print-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 4px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid var(--border);
+      }
+      .print-logo { height: 40px; width: auto; }
+      #print-title { font-size: 13pt; margin: 0; color: #1f2937; }
+      #print-subtitle { color: #4b5563; font-size: 8pt; margin-top: 1px; }
+
+      /* Lock the whole dashboard to exactly one landscape A4 page.
+       * main becomes a flex column: header + KPIs take their natural height,
+       * charts-section grows to fill whatever's left. overflow:hidden is the
+       * safety net — if the browser's own header/footer bar steals some
+       * space, content scales down inside rather than spilling to page 2. */
+      main {
+        padding: 0;
+        margin: 0;
+        width: 100%;
+        max-width: 100%;
+        height: 100vh;
+        max-height: 100vh;
+        box-sizing: border-box;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 4px;
+        overflow: hidden !important;
+      }
+      section { margin-bottom: 0 !important; }
+      #print-header { flex: 0 0 auto; }
+      #kpi-section { flex: 0 0 auto; }
+      .kpi, .chart-card, .card { page-break-inside: avoid; }
+
+      /* Box-sizing + width safety nets: prevents any element from pushing past
+       * the page width due to padding/border arithmetic or a Chart.js canvas
+       * that hasn't finished resizing into the print layout */
+      main, section, .charts-grid, .chart-card, .chart-wrap, .card, .kpi-grid, .kpi {
+        box-sizing: border-box !important;
+        max-width: 100% !important;
+      }
+
+      .chart-card {
+        break-inside: avoid;
+        margin-bottom: 0;
+        padding: 4px 6px;
+        min-height: 0;
+        min-width: 0 !important;  /* allow shrinking inside the grid column */
+        overflow: hidden !important;
+      }
+
+      /* Flatten the three separate .charts-grid containers into a single
+       * 3-row grid: row 1 is the two donuts side by side, rows 2 and 3 are
+       * the Yearly and YoY charts each spanning the full width.
+       * display:contents makes the .charts-grid wrappers disappear from
+       * layout while keeping their children in the DOM. Charts shrink to
+       * fit, guaranteeing the report fits on one landscape A4 page. */
+      #charts-section {
+        flex: 1 1 0 !important;
+        min-height: 0 !important;
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        /* Donuts get a compact row; Yearly and YoY each get a tall row so
+         * their line/bar charts can keep a readable aspect ratio rather
+         * than stretching wide and short across the page. */
+        grid-template-rows: 1fr 1.5fr 1.5fr !important;
+        gap: 8px !important;
+        margin-top: 0 !important;
+        width: 100% !important;
+      }
+      #charts-section .charts-grid { display: contents !important; }
+      /* Yearly + YoY: each takes its own full-width row beneath the donuts */
+      .chart-card.full-width-card {
+        grid-column: 1 / -1 !important;
+        align-items: center !important;
+      }
+      /* Cap the line/bar chart's aspect ratio so it can't stretch super-wide
+       * across the full page width — chart centres itself with whitespace
+       * left and right when the cell is wider than 2.8:1 allows. */
+      .chart-card.full-width-card .chart-wrap {
+        flex: 0 1 auto !important;
+        width: auto !important;
+        height: auto !important;
+        aspect-ratio: 2.8 / 1 !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        margin: auto !important;
+      }
+      .chart-card.full-width-card h2,
+      .chart-card.full-width-card .chart-caption { align-self: stretch !important; }
+
+      /* Each chart-card stretches to fill its grid cell; chart-wrap then
+       * fills what's left after the h2. Everything scales to the available
+       * space rather than being pinned to a fixed pixel height. */
+      .chart-card {
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100% !important;
+        min-height: 0 !important;
+      }
+      .chart-card .chart-wrap {
+        flex: 1 1 0 !important;
+        min-height: 0 !important;
+        height: auto !important;
+        width: 100% !important;
+        position: relative !important;
+      }
+      /* Hard cap on canvas — Chart.js can render at stale on-screen
+       * dimensions during print; this guarantees it can't overflow */
+      .chart-card .chart-wrap > canvas {
+        max-width: 100% !important;
+        max-height: 100% !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      .chart-card h2 {
+        flex: 0 0 auto;
+        font-size: 8.5pt;
+        margin-bottom: 2px;
+        white-space: normal;
+        overflow: visible;
+        word-break: break-word;
+      }
+      .chart-caption { flex: 0 0 auto; font-size: 7pt; margin-top: 1pt; }
+
+      /* KPIs: single compact row. Portrait is narrower so keep labels tight. */
+      .kpi-grid { grid-template-columns: repeat(5, 1fr) !important; gap: 4px; }
+      .kpi { padding: 4px 6px; cursor: default; }
+      .kpi:hover { transform: none; box-shadow: none; border-color: var(--border); }
+      .kpi .label { font-size: 6.5pt; letter-spacing: 0.02em; }
+      .kpi .value { font-size: 14pt; margin-top: 0; }
+      .kpi .hint { display: none; }
+
+      /* Preview table: show all filtered rows, avoid splitting rows across pages */
+      .table-scroll { max-height: none !important; overflow: visible !important; }
+      table thead { display: table-header-group; }
+      tr { page-break-inside: avoid; }
+      th.col-actions, td.col-actions { display: none !important; }
+
+      /* Flatten editable inputs/selects to plain text for the printed report */
+      .row-input, .row-select {
+        border: none !important;
+        background: transparent !important;
+        padding: 0 !important;
+        color: var(--text) !important;
+        appearance: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <img src="bostock-logo.png" alt="Bostock Pools & Spas" class="brand-logo" onerror="this.style.display='none'" />
+  </div>
+  <div class="title-block">
+    <h1>Bostock Leads Dashboard</h1>
+    <div class="title-meta">
+      <span id="file-name"></span>
+      <span id="merge-status"></span>
+      <span id="save-status"></span>
+    </div>
+  </div>
+  <div class="actions">
+    <label class="upload-btn" for="file-input">Upload Excel</label>
+    <input id="file-input" type="file" accept=".xlsx,.xls" />
+    <button class="toggle-btn" id="download-pdf" title="Open the print dialog — pick 'Save as PDF' to download a report">Download PDF</button>
+    <button class="toggle-btn" id="export-data" title="Download a backup of all your saved leads as a JSON file">Backup</button>
+    <label class="toggle-btn" for="import-data-input" title="Restore from a previous backup file">Restore</label>
+    <input id="import-data-input" type="file" accept=".json,application/json" />
+    <button class="toggle-btn" id="clear-data" title="Remove all saved leads from this browser">Clear data</button>
+    <button class="toggle-btn" id="theme-toggle" title="Toggle light / dark">Dark mode</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- Print-only report header (hidden on screen, shown in PDF export) -->
+  <div id="print-header" class="print-only" aria-hidden="true">
+    <img src="bostock-logo.png" alt="" class="print-logo" onerror="this.style.display='none'" />
+    <div>
+      <h1 id="print-title">Bostock Leads Report</h1>
+      <div id="print-subtitle"></div>
+    </div>
+  </div>
+
+  <!-- Empty state (pre-upload) -->
+  <section id="empty-state" class="empty-state">
+    <strong>Upload your Excel workbook to begin</strong>
+    Accepts <code>.xlsx</code> and <code>.xls</code>. Everything is processed locally in your browser — no data leaves this page.
+  </section>
+
+  <!-- Parse-error banner -->
+  <section id="error-banner" class="error-banner" hidden></section>
+
+  <!-- Period selector: drives KPIs, Source/Location charts and preview table -->
+  <section id="period-section" hidden>
+    <div class="period-bar">
+      <label for="period-select"><strong>Showing</strong></label>
+      <select id="period-select"></select>
+      <span class="period-hint" id="period-hint"></span>
+    </div>
+  </section>
+
+  <!-- KPI cards -->
+  <section id="kpi-section" hidden>
+    <div class="kpi-grid">
+      <div class="kpi total"    role="button" tabindex="0" data-cat="">
+        <div class="label">Total leads</div>
+        <div class="value" id="kpi-total">0</div>
+        <div class="hint">Click to see all</div>
+      </div>
+      <div class="kpi current"  role="button" tabindex="0" data-cat="Appointment Booked">
+        <div class="label">Appointment booked</div>
+        <div class="value" id="kpi-current">0</div>
+        <div class="hint">Click to view list</div>
+      </div>
+      <div class="kpi building" role="button" tabindex="0" data-cat="Building a Pool">
+        <div class="label">Building a Pool</div>
+        <div class="value" id="kpi-building">0</div>
+        <div class="hint">Click to view list</div>
+      </div>
+      <div class="kpi followup" role="button" tabindex="0" data-cat="Follow Up Leads">
+        <div class="label">Follow up leads</div>
+        <div class="value" id="kpi-followup">0</div>
+        <div class="hint">Click to view list</div>
+      </div>
+      <div class="kpi nofollow" role="button" tabindex="0" data-cat="No Follow Up">
+        <div class="label">No follow up</div>
+        <div class="value" id="kpi-nofollow">0</div>
+        <div class="hint">Click to view list</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Charts -->
+  <section id="charts-section" hidden>
+    <div class="charts-grid top-row">
+      <div class="chart-card">
+        <h2>Lead source (top 10)</h2>
+        <div class="chart-wrap"><canvas id="chart-source"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h2>Location (top 10)</h2>
+        <div class="chart-wrap"><canvas id="chart-location"></canvas></div>
+        <div class="chart-caption" id="chart-location-caption"></div>
+      </div>
+    </div>
+    <div class="charts-grid" style="margin-top:18px;">
+      <div class="chart-card full-width-card" style="min-height:360px;">
+        <h2>Yearly overview (by month)</h2>
+        <div class="chart-wrap"><canvas id="chart-yearly"></canvas></div>
+      </div>
+    </div>
+    <div class="charts-grid" style="margin-top:18px;">
+      <div class="chart-card full-width-card" style="min-height:360px;">
+        <h2>Year-over-year (same months)</h2>
+        <div class="chart-wrap"><canvas id="chart-yoy"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- Google Ads performance: monthly metrics entered manually from agency PDFs -->
+  <section id="ads-section" hidden>
+    <div class="card">
+      <div class="ads-header">
+        <div>
+          <h2 style="margin:0;">Google Ads Performance</h2>
+          <div class="ads-subtitle">How much we spent on Google Ads each month and what we got back: phone calls and online enquiries.</div>
+        </div>
+        <button type="button" id="add-ads-month" class="upload-btn" style="font-size:13px;padding:7px 12px;">+ Add monthly data</button>
+      </div>
+      <div class="ads-kpi-grid">
+        <div class="ads-kpi primary">
+          <div class="label">Ad spend</div>
+          <div class="value" id="ads-cost">$0</div>
+          <div class="sub">What we paid Google</div>
+        </div>
+        <div class="ads-kpi primary">
+          <div class="label">New enquiries from ads</div>
+          <div class="value" id="ads-conv">0</div>
+          <div class="sub">Phone calls + online forms</div>
+        </div>
+        <div class="ads-kpi primary">
+          <div class="label">Cost per enquiry</div>
+          <div class="value" id="ads-costconv">$0</div>
+          <div class="sub">Spend ÷ enquiries — efficiency</div>
+        </div>
+        <div class="ads-kpi">
+          <div class="label">Phone calls from ads</div>
+          <div class="value" id="ads-calls">0</div>
+          <div class="sub">People who called from the ad</div>
+        </div>
+        <div class="ads-kpi">
+          <div class="label">Ad clicks</div>
+          <div class="value" id="ads-clicks">0</div>
+          <div class="sub">Visits to our website from ads</div>
+        </div>
+        <div class="ads-kpi">
+          <div class="label">Ad views</div>
+          <div class="value" id="ads-impressions">0</div>
+          <div class="sub">Times the ad was shown</div>
+        </div>
+        <div class="ads-kpi">
+          <div class="label">Click-through rate</div>
+          <div class="value" id="ads-ctr">0%</div>
+          <div class="sub">% of viewers who clicked</div>
+        </div>
+      </div>
+      <div class="table-scroll" style="margin-top:16px;max-height:300px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Ad spend</th>
+              <th>New enquiries</th>
+              <th>Cost per enquiry</th>
+              <th>Phone calls</th>
+              <th>Ad clicks</th>
+              <th>Ad views</th>
+              <th>Click-through</th>
+              <th class="col-actions"></th>
+            </tr>
+          </thead>
+          <tbody id="ads-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Facebook & Instagram Ads performance: monthly metrics per campaign type -->
+  <section id="fb-section" hidden>
+    <div class="card">
+      <div class="ads-header">
+        <div>
+          <h2 style="margin:0;">Facebook &amp; Instagram Ads Performance</h2>
+          <div class="ads-subtitle">Three campaigns running on Meta — what we spent and what each one delivered.</div>
+        </div>
+        <button type="button" id="add-fb-month" class="upload-btn" style="font-size:13px;padding:7px 12px;">+ Add monthly data</button>
+      </div>
+
+      <div class="ads-kpi-grid" style="grid-template-columns:1fr;margin-bottom:14px;">
+        <div class="ads-kpi primary">
+          <div class="label">Total social ad spend</div>
+          <div class="value" id="fb-total-spend">$0</div>
+          <div class="sub">Across all three campaigns combined</div>
+        </div>
+      </div>
+
+      <div class="fb-campaigns-grid">
+        <div class="fb-campaign" data-campaign="leads">
+          <h3>Lead Generation</h3>
+          <p class="fb-camp-desc">Form ads collecting enquiry details directly on Facebook/Instagram.</p>
+          <div class="fb-camp-kpis">
+            <div><span class="label">Spend</span><span class="value" id="fb-leads-spend">$0</span></div>
+            <div><span class="label">Form leads</span><span class="value" id="fb-leads-results">0</span></div>
+            <div><span class="label">Cost per lead</span><span class="value" id="fb-leads-cpr">—</span></div>
+          </div>
+          <div class="fb-camp-detail"><span id="fb-leads-impr">0</span> ad views · <span id="fb-leads-clicks">0</span> clicks</div>
+        </div>
+
+        <div class="fb-campaign" data-campaign="traffic">
+          <h3>Website Traffic</h3>
+          <p class="fb-camp-desc">Driving people from social to bostockpools.com.au.</p>
+          <div class="fb-camp-kpis">
+            <div><span class="label">Spend</span><span class="value" id="fb-traffic-spend">$0</span></div>
+            <div><span class="label">Website visits</span><span class="value" id="fb-traffic-results">0</span></div>
+            <div><span class="label">Cost per visit</span><span class="value" id="fb-traffic-cpr">—</span></div>
+          </div>
+          <div class="fb-camp-detail"><span id="fb-traffic-impr">0</span> ad views · <span id="fb-traffic-clicks">0</span> clicks</div>
+        </div>
+
+        <div class="fb-campaign" data-campaign="followers">
+          <h3>Instagram Followers</h3>
+          <p class="fb-camp-desc">Growing the Instagram audience for ongoing organic reach.</p>
+          <div class="fb-camp-kpis">
+            <div><span class="label">Spend</span><span class="value" id="fb-followers-spend">$0</span></div>
+            <div><span class="label">New followers</span><span class="value" id="fb-followers-results">0</span></div>
+            <div><span class="label">Cost per follower</span><span class="value" id="fb-followers-cpr">—</span></div>
+          </div>
+          <div class="fb-camp-detail"><span id="fb-followers-impr">0</span> ad views · <span id="fb-followers-clicks">0</span> clicks</div>
+        </div>
+      </div>
+
+      <div class="table-scroll" style="margin-top:18px;max-height:340px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Campaign</th>
+              <th>Ad spend</th>
+              <th>Result</th>
+              <th>Cost per result</th>
+              <th>Ad views</th>
+              <th>Clicks</th>
+              <th class="col-actions"></th>
+            </tr>
+          </thead>
+          <tbody id="fb-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Modal for adding/editing one month of Facebook Ads data -->
+  <div id="fb-form-modal" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <h3 id="fb-form-title">Add monthly Facebook Ads data</h3>
+      <p class="modal-help">One entry per month per campaign. If you ran all three campaigns in April, add three entries for April — one for each.</p>
+      <form id="fb-form">
+        <label>Reporting month
+          <input type="month" id="fb-form-month" required />
+        </label>
+        <label>Campaign type
+          <select id="fb-form-campaign" required>
+            <option value="leads">Lead Generation (form ads)</option>
+            <option value="traffic">Website Traffic</option>
+            <option value="followers">Instagram Followers</option>
+          </select>
+        </label>
+        <label>Total spend ($)<span class="hint">What we paid Meta this month for this campaign</span>
+          <input type="number" id="fb-form-spend" min="0" step="0.01" required />
+        </label>
+        <label id="fb-form-result-label">Form leads collected<span class="hint" id="fb-form-result-hint">How many people filled out the form</span>
+          <input type="number" id="fb-form-result" min="0" step="1" />
+        </label>
+        <label>Ad views<span class="hint">"Impressions" — times the ad was shown</span>
+          <input type="number" id="fb-form-impressions" min="0" step="1" />
+        </label>
+        <label>Clicks<span class="hint">Link clicks the ad received</span>
+          <input type="number" id="fb-form-clicks" min="0" step="1" />
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="fb-form-cancel" class="toggle-btn">Cancel</button>
+          <button type="submit" class="upload-btn">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal for adding/editing one month of Google Ads data -->
+  <div id="ads-form-modal" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <h3 id="ads-form-title">Add monthly Google Ads data</h3>
+      <p class="modal-help">Copy these numbers from the agency's monthly report. Anything you don't have yet, leave at zero.</p>
+      <form id="ads-form">
+        <label>Reporting month
+          <input type="month" id="ads-form-month" required />
+        </label>
+        <label>Total ad spend ($)<span class="hint">What we paid Google this month</span>
+          <input type="number" id="ads-form-cost" min="0" step="0.01" required />
+        </label>
+        <label>New enquiries<span class="hint">Phone calls + online forms (the "Conv." number on the agency report)</span>
+          <input type="number" id="ads-form-conv" min="0" step="1" />
+        </label>
+        <label>Phone calls only<span class="hint">Just the calls (the "Phone calls" number)</span>
+          <input type="number" id="ads-form-phonecalls" min="0" step="1" />
+        </label>
+        <label>Ad clicks<span class="hint">"Clicks" — visits to our website from the ad</span>
+          <input type="number" id="ads-form-clicks" min="0" step="1" required />
+        </label>
+        <label>Ad views<span class="hint">"Impressions" — how many times the ad was shown</span>
+          <input type="number" id="ads-form-impressions" min="0" step="1" required />
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="ads-form-cancel" class="toggle-btn">Cancel</button>
+          <button type="submit" class="upload-btn">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Filters + preview table -->
+  <section id="preview-section" hidden>
+    <div class="card">
+      <h2>Leads preview</h2>
+      <div class="filters">
+        <label>Year
+          <select id="filter-year"><option value="">All</option></select>
+        </label>
+        <label>Worksheet
+          <select id="filter-sheet"><option value="">All</option></select>
+        </label>
+        <label>Status category
+          <select id="filter-category"><option value="">All</option></select>
+        </label>
+      </div>
+      <div class="filter-summary" id="filter-summary"></div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Enquiry date</th>
+              <th>First name</th>
+              <th>Surname</th>
+              <th>Status</th>
+              <th>Category</th>
+              <th>Lead source</th>
+              <th>Location</th>
+              <th>Notes</th>
+              <th class="col-actions" aria-label="Delete"></th>
+            </tr>
+          </thead>
+          <tbody id="preview-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Debug / assumptions -->
+  <section id="debug-section" hidden>
+    <details class="debug">
+      <summary>Assumptions &amp; debug info</summary>
+      <div class="debug-body" id="debug-body"></div>
+    </details>
+  </section>
+
+</main>
+
+<script>
+/* ============================================================
+ * Bostock Leads Dashboard
+ * All logic lives in this one script block.
+ * Sections:
+ *   1. Constants    (header aliases, status map, month names)
+ *   2. Parser       (read workbook -> normalised records)
+ *   3. State + render entry point
+ *   4. Renderers    (KPIs, charts, summary, filters, preview, debug)
+ *   5. Events       (file upload, filters, theme toggle)
+ * ============================================================ */
+
+/* ---------- 1. Constants ---------------------------------- */
+
+// Logical column -> list of accepted header aliases (case-insensitive, whitespace-collapsed).
+const HEADER_ALIASES = {
+  status:       ['status', 'lead status', 'stage'],
+  firstName:    ['first name', 'first', 'given name'],
+  surname:      ['surname', 'last name', 'family name'],
+  leadSource:   ['lead source', 'source'],
+  location:     ['location', 'suburb', 'town', 'city', 'area', 'postcode', 'region', 'state'],
+  enquiryDate:  ['enquiry date', 'date', 'created date', 'lead date'],
+  notes:        ['notes', 'comments'],
+};
+
+// Raw status (lowercased, whitespace-collapsed) -> dashboard category.
+// Anything missing from this map falls through to "Other" (or "Unknown" if empty).
+const STATUS_MAP = {
+  // Current Leads
+  'active':              'Current Leads',
+  'open':                'Current Leads',
+  'new':                 'Current Leads',
+  'general info sent':   'Current Leads',
+  'appt booked':         'Current Leads',
+  'booking appt':        'Current Leads',
+  'in contact':          'Current Leads',
+  'awaiting response':   'Current Leads',
+  'attempted contact':   'Current Leads',
+  'called emailed':      'Current Leads',
+  'sms emailed':         'Current Leads',
+  'follow up sent':      'Current Leads',
+  // Building a Pool
+  'building a pool':     'Building a Pool',
+  'under construction':  'Building a Pool',
+  'in build':            'Building a Pool',
+  'build in progress':   'Building a Pool',
+  // Follow Up Leads
+  'follow up':           'Follow Up Leads',
+  'future follow up':    'Follow Up Leads',
+  'estimate sent':       'Follow Up Leads',
+  'opc complete':        'Follow Up Leads',
+  'fu phone appt booked':'Follow Up Leads',
+  'ellie booking appt':  'Follow Up Leads',
+  // No Follow Up
+  'no follow up':        'No Follow Up',
+  'disqualified':        'No Follow Up',
+  'closed lost':         'No Follow Up',
+};
+
+const CATEGORIES = ['Current Leads', 'Building a Pool', 'Follow Up Leads', 'No Follow Up'];
+
+/* "Appointment Booked" is a cross-category roll-up: it counts any lead whose
+ * raw status indicates a booked appointment, regardless of whether the lead
+ * sits in Current Leads or Follow Up Leads. Edit this list if new statuses
+ * come up — e.g. "appointment scheduled", "confirmed appt". */
+const APPT_BOOKED_STATUSES = new Set([
+  'appt booked',
+  'booking appt',
+  'fu phone appt booked',
+  'ellie booking appt',
+]);
+const APPT_BOOKED_LABEL = 'Appointment Booked';
+const CATEGORY_COLORS = {
+  'Current Leads':      'var(--c-current)',
+  'Building a Pool': 'var(--c-building)',
+  'Follow Up Leads':    'var(--c-followup)',
+  'No Follow Up':       'var(--c-nofollow)',
+  'Other':              'var(--c-other)',
+  'Unknown':            'var(--c-other)',
+};
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_NAMES_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+/* Resolve a CSS variable to its current computed value (Chart.js needs actual colours). */
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/* ---------- 2. Parser ------------------------------------- */
+
+/** Normalise a header cell for alias matching. */
+function normHeader(raw) {
+  if (raw == null) return '';
+  return String(raw).replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/** Normalise a status cell. */
+function normStatus(raw) {
+  if (raw == null) return '';
+  return String(raw).replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Scan the first ~10 rows of a sheet, return the index of the row that looks
+ * most like the header. A row scores 1 point per matched alias across all
+ * logical columns. We require at least 2 matches to avoid false positives
+ * on notes / title rows. Returns -1 if no row qualifies.
+ */
+function detectHeaderRow(rows) {
+  const limit = Math.min(rows.length, 10);
+  let bestIdx = -1, bestScore = 0;
+  for (let i = 0; i < limit; i++) {
+    const row = rows[i] || [];
+    const normalised = row.map(normHeader);
+    let score = 0;
+    for (const aliases of Object.values(HEADER_ALIASES)) {
+      if (normalised.some(cell => aliases.includes(cell))) score++;
+    }
+    if (score > bestScore) { bestScore = score; bestIdx = i; }
+  }
+  return bestScore >= 2 ? bestIdx : -1;
+}
+
+/**
+ * Given the header row, return:
+ *   map:       { logicalName -> columnIndex | null }
+ *   matched:   list of logical names actually found
+ *   unmatched: list of header cells that don't match anything
+ */
+function buildColumnMap(headerRow) {
+  const normalised = (headerRow || []).map(normHeader);
+  const map = {};
+  const matched = [];
+  const usedIndexes = new Set();
+  for (const [logical, aliases] of Object.entries(HEADER_ALIASES)) {
+    const idx = normalised.findIndex(cell => aliases.includes(cell));
+    map[logical] = idx >= 0 ? idx : null;
+    if (idx >= 0) { matched.push(logical); usedIndexes.add(idx); }
+  }
+  const unmatched = normalised
+    .map((cell, idx) => ({ cell, idx }))
+    .filter(x => x.cell && !usedIndexes.has(x.idx))
+    .map(x => headerRow[x.idx]);
+  return { map, matched, unmatched };
+}
+
+/**
+ * Parse an Enquiry Date cell. Handles:
+ *   - JS Date (from XLSX cellDates:true)
+ *   - Excel serial number (days since 1899-12-30)
+ *   - String (tries Date.parse, then AU DD/MM/YYYY fallback)
+ * Returns { date, year, monthIndex, monthKey:'YYYY-MM', monthDisplay:'Mon YYYY' } or null.
+ */
+function parseEnquiryDate(value) {
+  if (value == null || value === '') return null;
+  let d = null;
+  if (value instanceof Date && !isNaN(value)) {
+    d = value;
+  } else if (typeof value === 'number' && isFinite(value)) {
+    // Excel serial -> JS Date (UTC). Excel epoch is 1899-12-30 to account for the 1900 leap-year bug.
+    d = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+  } else {
+    const s = String(value).trim();
+    // Try native parse first
+    const t = Date.parse(s);
+    if (!isNaN(t)) {
+      d = new Date(t);
+    } else {
+      // Try DD/MM/YYYY or D-M-YY (AU style)
+      const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      if (m) {
+        let [, dd, mm, yy] = m;
+        dd = +dd; mm = +mm; yy = +yy;
+        if (yy < 100) yy += yy < 70 ? 2000 : 1900;
+        if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+          d = new Date(yy, mm - 1, dd);
+        }
+      }
+    }
+  }
+  if (!d || isNaN(d)) return null;
+  const year = d.getFullYear();
+  const mIdx = d.getMonth();
+  const monthKey = `${year}-${String(mIdx + 1).padStart(2, '0')}`;
+  const monthDisplay = `${MONTH_NAMES[mIdx]} ${year}`;
+  return { date: d, year, monthIndex: mIdx, monthKey, monthDisplay };
+}
+
+/**
+ * Best-effort month inference from a sheet/tab name for rows that have no valid
+ * enquiry date. Looks for a month substring (jan..dec or full name) and a 4-digit
+ * year. Returns { year, monthIndex, monthKey, monthDisplay } or null.
+ */
+function sheetNameToMonth(name) {
+  if (!name) return null;
+  const lower = name.toLowerCase();
+  let mIdx = -1;
+  for (let i = 0; i < 12; i++) {
+    if (lower.includes(MONTH_NAMES_LONG[i].toLowerCase())) { mIdx = i; break; }
+  }
+  if (mIdx === -1) {
+    for (let i = 0; i < 12; i++) {
+      if (new RegExp(`\\b${MONTH_NAMES[i].toLowerCase()}\\b`).test(lower)) { mIdx = i; break; }
+    }
+  }
+  if (mIdx === -1) return null;
+  const yMatch = name.match(/(20\d{2})/);
+  if (!yMatch) return null;
+  const year = +yMatch[1];
+  const monthKey = `${year}-${String(mIdx + 1).padStart(2, '0')}`;
+  return { year, monthIndex: mIdx, monthKey, monthDisplay: `${MONTH_NAMES[mIdx]} ${year}` };
+}
+
+/** Map a raw status to a dashboard category. */
+function categorizeStatus(raw) {
+  const n = normStatus(raw);
+  if (!n) return 'Unknown';
+  return STATUS_MAP[n] || 'Other';
+}
+
+/** Safely read a cell value as a trimmed string.
+ *  Numbers (e.g. postcodes) get coerced so downstream string ops are safe. */
+function readCell(row, idx) {
+  if (idx == null || idx < 0) return '';
+  const v = row[idx];
+  if (v == null) return '';
+  if (typeof v === 'string') return v.trim();
+  if (v instanceof Date) return v.toISOString();
+  return String(v).trim();
+}
+
+/**
+ * Parse the entire workbook into a flat list of normalised records plus debug info.
+ * Returns { records, debug }.
+ */
+function parseWorkbook(workbook) {
+  const records = [];
+  const debug = {
+    sheets: [],          // per-sheet: { name, headerRow, matched, unmatched, rowsParsed, withDate, missingDate }
+    unmatchedStatuses: {},
+    totalRowsSeen: 0,
+  };
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    // header:1 gives us raw rows (arrays). blankrows:false drops empty rows up-front.
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, blankrows: false });
+    const headerIdx = detectHeaderRow(rows);
+    const sheetInfo = {
+      name: sheetName,
+      headerRow: headerIdx,
+      matched: [],
+      unmatched: [],
+      rowsParsed: 0,
+      withDate: 0,
+      missingDate: 0,
+    };
+
+    if (headerIdx === -1) {
+      debug.sheets.push(sheetInfo);
+      continue;
+    }
+
+    const headerRow = rows[headerIdx];
+    const { map, matched, unmatched } = buildColumnMap(headerRow);
+    sheetInfo.matched = matched;
+    sheetInfo.unmatched = unmatched;
+
+    // Sheet-name fallback for rows without a valid date
+    const sheetFallback = sheetNameToMonth(sheetName);
+
+    for (let r = headerIdx + 1; r < rows.length; r++) {
+      const row = rows[r] || [];
+      debug.totalRowsSeen++;
+
+      const statusRaw    = readCell(row, map.status);
+      const firstName    = readCell(row, map.firstName);
+      const surname      = readCell(row, map.surname);
+      const leadSource   = readCell(row, map.leadSource);
+      const location     = readCell(row, map.location);
+      const enquiryCell  = map.enquiryDate != null ? row[map.enquiryDate] : null;
+      const notes        = readCell(row, map.notes);
+
+      // Skip rows where every mapped cell is empty (blank / separator / notes-only)
+      const anyContent = [statusRaw, firstName, surname, leadSource, location, enquiryCell, notes]
+        .some(v => v !== '' && v != null);
+      if (!anyContent) continue;
+
+      // Skip rows that look like notes-only: only "notes" populated, nothing else.
+      const nonNotesContent = [statusRaw, firstName, surname, leadSource, location, enquiryCell]
+        .some(v => v !== '' && v != null);
+      if (!nonNotesContent && notes) continue;
+
+      const parsedDate = parseEnquiryDate(enquiryCell);
+      let year = null, monthIdx = null, monthKey = null, monthDisplay = null, dateObj = null;
+      if (parsedDate) {
+        dateObj = parsedDate.date;
+        year = parsedDate.year;
+        monthIdx = parsedDate.monthIndex;
+        monthKey = parsedDate.monthKey;
+        monthDisplay = parsedDate.monthDisplay;
+        sheetInfo.withDate++;
+      } else if (sheetFallback) {
+        // Fall back to sheet name month only if the row really has no date
+        year = sheetFallback.year;
+        monthIdx = sheetFallback.monthIndex;
+        monthKey = sheetFallback.monthKey;
+        monthDisplay = sheetFallback.monthDisplay;
+        sheetInfo.missingDate++;
+      } else {
+        sheetInfo.missingDate++;
+      }
+
+      const statusCategory = categorizeStatus(statusRaw);
+      if (statusCategory === 'Other' && statusRaw) {
+        const key = String(statusRaw).trim();
+        debug.unmatchedStatuses[key] = (debug.unmatchedStatuses[key] || 0) + 1;
+      }
+
+      records.push({
+        sheetName,
+        enquiryDate:    dateObj,
+        year,
+        month:          monthKey,
+        monthDisplay,
+        monthIndex:     monthIdx,
+        statusRaw:      statusRaw || '',
+        statusCategory,
+        firstName,
+        surname,
+        leadSource,
+        location,
+        notes,
+      });
+      sheetInfo.rowsParsed++;
+    }
+
+    debug.sheets.push(sheetInfo);
+  }
+
+  return { records, debug };
+}
+
+/* ---------- 3. State + render entry point ----------------- */
+
+const state = {
+  records: [],
+  debug: null,
+  period: '',   // '' = Yearly overview (all months); otherwise a 'YYYY-MM' key
+  /* adsRecords: monthly Google Ads metrics entered manually from the
+   * agency's monthly report. One record per month.
+   * Shape: { month: 'YYYY-MM', clicks, impressions, cost, phoneCalls, conversions } */
+  adsRecords: [],
+  /* fbRecords: monthly Facebook/Instagram Ads metrics. One record per
+   * (month, campaign) pair — campaigns are 'leads', 'traffic', 'followers'.
+   * Shape: { month: 'YYYY-MM', campaign, spend, impressions, clicks, result } */
+  fbRecords: [],
+  charts: { yearly: null, source: null, location: null, yoy: null, ads: null },
+};
+
+/* Facebook campaign definitions: drives the per-campaign labels, the dynamic
+ * form hint, and the table's "Result" column wording. Edit here if a new
+ * campaign type comes up later. */
+const FB_CAMPAIGNS = {
+  leads: {
+    name: 'Lead Generation',
+    desc: 'Form ads collecting enquiry details directly on Facebook/Instagram.',
+    resultLabel: 'Form leads collected',
+    resultShort: 'Form leads',
+    costLabel:   'Cost per lead',
+    formHint:    "How many people filled out the form. Sometimes called 'leads' or 'on-Facebook leads'.",
+  },
+  traffic: {
+    name: 'Website Traffic',
+    desc: 'Driving people from social to bostockpools.com.au.',
+    resultLabel: 'Website visits',
+    resultShort: 'Visits',
+    costLabel:   'Cost per visit',
+    formHint:    "Landing page views (or link clicks if your report doesn't break out landing page views).",
+  },
+  followers: {
+    name: 'Instagram Followers',
+    desc: 'Growing the Instagram audience for ongoing organic reach.',
+    resultLabel: 'New followers',
+    resultShort: 'New followers',
+    costLabel:   'Cost per follower',
+    formHint:    'Net new followers gained this month from this campaign.',
+  },
+};
+const FB_CAMPAIGN_KEYS = Object.keys(FB_CAMPAIGNS);
+
+/* Records filtered by the global period selector. Used by KPIs, source chart,
+ * location chart and the preview table. The yearly chart always uses the full
+ * dataset so it can show cross-year comparison regardless of the period.
+ *
+ * period values:
+ *   ''            -> total overview (all data)
+ *   'year:YYYY'   -> yearly overview for that year
+ *   'YYYY-MM'     -> specific month
+ */
+function getActiveRecords() {
+  if (!state.period) return state.records;
+  if (state.period.startsWith('year:')) {
+    const year = Number(state.period.slice(5));
+    return state.records.filter(r => r.year === year);
+  }
+  return state.records.filter(r => r.month === state.period);
+}
+
+/* Human-readable label for the current period. Used by the preview summary,
+ * the print header and the hint line next to the period dropdown. */
+function getPeriodLabel() {
+  if (!state.period) return 'Total overview (all data)';
+  if (state.period.startsWith('year:')) return `Yearly overview — ${state.period.slice(5)}`;
+  const rec = state.records.find(r => r.month === state.period);
+  return rec?.monthDisplay || state.period;
+}
+
+/* ---------- Persistence (localStorage) ---------- */
+/* Saved data is versioned so future schema changes can be handled cleanly.
+ * Date objects don't survive JSON round-trips, so we convert to/from ISO strings. */
+const STORAGE_KEY = 'bostock-data-v1';
+
+function saveState() {
+  try {
+    const payload = {
+      records: state.records.map(r => ({
+        ...r,
+        enquiryDate: r.enquiryDate ? r.enquiryDate.toISOString() : null,
+      })),
+      debug: state.debug,
+      adsRecords: state.adsRecords,
+      fbRecords: state.fbRecords,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    flashSavedIndicator();
+  } catch (e) {
+    console.warn('Could not save data to localStorage:', e);
+    showError('Could not save data to your browser (it may be full). Use Backup to download your data as a file before continuing.');
+  }
+}
+
+/* Briefly show "✓ Saved" in the title meta so users see persistence
+ * actually happening — important after manual edits or upload. */
+let savedFlashTimer = null;
+function flashSavedIndicator() {
+  const el = document.getElementById('save-status');
+  if (!el) return;
+  el.textContent = '✓ Saved';
+  el.classList.add('saved-flash');
+  clearTimeout(savedFlashTimer);
+  savedFlashTimer = setTimeout(() => { el.classList.remove('saved-flash'); }, 1800);
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const payload = JSON.parse(raw);
+    if (!payload || !Array.isArray(payload.records) || payload.records.length === 0) return false;
+    state.records = payload.records.map(r => {
+      const rec = {
+        ...r,
+        enquiryDate: r.enquiryDate ? new Date(r.enquiryDate) : null,
+      };
+      // Backwards-compat: rename old "Currently Building" category to
+      // "Building a Pool" so previously-saved data still counts correctly.
+      if (rec.statusCategory === 'Currently Building') {
+        rec.statusCategory = 'Building a Pool';
+      }
+      return rec;
+    });
+    state.debug = payload.debug || { sheets: [], unmatchedStatuses: {}, totalRowsSeen: 0 };
+    state.adsRecords = Array.isArray(payload.adsRecords) ? payload.adsRecords : [];
+    state.fbRecords  = Array.isArray(payload.fbRecords)  ? payload.fbRecords  : [];
+    return true;
+  } catch (e) {
+    console.warn('Could not load saved data:', e);
+    return false;
+  }
+}
+
+function clearSavedData() {
+  localStorage.removeItem(STORAGE_KEY);
+  state.records = [];
+  state.debug = null;
+  state.adsRecords = [];
+  state.fbRecords = [];
+  for (const k of Object.keys(state.charts)) {
+    state.charts[k]?.destroy();
+    state.charts[k] = null;
+  }
+  document.getElementById('file-name').textContent = '';
+  document.getElementById('merge-status').textContent = '';
+  clearError();
+  showEmptyState();
+}
+
+/* ---------- Merge on upload (dedupe by content signature) ---------- */
+/* The signature intentionally excludes sheetName so re-uploading the same
+ * file doesn't produce duplicates, even if the sheet was renamed. */
+function recordKey(r) {
+  const d = r.enquiryDate
+    ? (r.enquiryDate instanceof Date ? r.enquiryDate.toISOString() : String(r.enquiryDate))
+    : '';
+  // Coerce to string first — cells like postcodes arrive as numbers from SheetJS
+  const s = (v) => String(v == null ? '' : v).trim().toLowerCase();
+  return [
+    s(r.firstName), s(r.surname), d, s(r.statusRaw), s(r.leadSource), s(r.location),
+  ].join('|');
+}
+
+function mergeRecords(existing, incoming) {
+  const seen = new Set(existing.map(recordKey));
+  const merged = existing.slice();
+  let added = 0;
+  for (const r of incoming) {
+    const k = recordKey(r);
+    if (!seen.has(k)) { seen.add(k); merged.push(r); added++; }
+  }
+  return { merged, added, skipped: incoming.length - added };
+}
+
+function mergeDebug(existing, incoming) {
+  if (!existing || !existing.sheets) return incoming;
+  // Union of sheets by name, newer upload wins
+  const sheetMap = new Map(existing.sheets.map(s => [s.name, s]));
+  for (const s of incoming.sheets) sheetMap.set(s.name, s);
+  // Sum unmatched status counts
+  const unmatchedStatuses = { ...(existing.unmatchedStatuses || {}) };
+  for (const [k, v] of Object.entries(incoming.unmatchedStatuses || {})) {
+    unmatchedStatuses[k] = (unmatchedStatuses[k] || 0) + v;
+  }
+  return {
+    sheets: [...sheetMap.values()],
+    unmatchedStatuses,
+    totalRowsSeen: (existing.totalRowsSeen || 0) + (incoming.totalRowsSeen || 0),
+  };
+}
+
+/**
+ * Entry point after a workbook has been parsed.
+ * Destroys old charts and redraws everything from scratch.
+ */
+function renderAll() {
+  if (state.records.length === 0 && state.adsRecords.length === 0 && state.fbRecords.length === 0) {
+    showEmptyState();
+    return;
+  }
+  showDashboardSections();
+  populatePeriodOptions();
+  renderKPIs();
+  renderSourceChart();
+  renderLocationChart();
+  renderYearlyChart();
+  renderYoYChart();
+  renderAdsAll();
+  renderFbAll();
+  populateFilterOptions();
+  renderPreview();
+  renderDebug();
+}
+
+/* Google Ads renderers — KPIs, chart, table all driven by state.adsRecords */
+function renderAdsAll() {
+  renderAdsKPIs();
+  renderAdsTable();
+}
+
+/* Facebook Ads renderers — total spend + per-campaign aggregates + table */
+function renderFbAll() {
+  renderFbKPIs();
+  renderFbTable();
+}
+
+function showEmptyState() {
+  document.getElementById('empty-state').hidden = false;
+  for (const id of ['period-section','kpi-section','charts-section','ads-section','fb-section','preview-section','debug-section']) {
+    document.getElementById(id).hidden = true;
+  }
+}
+function showDashboardSections() {
+  document.getElementById('empty-state').hidden = true;
+  for (const id of ['period-section','kpi-section','charts-section','ads-section','fb-section','preview-section','debug-section']) {
+    document.getElementById(id).hidden = false;
+  }
+}
+function showError(msg) {
+  const banner = document.getElementById('error-banner');
+  banner.textContent = msg;
+  banner.hidden = false;
+}
+function clearError() {
+  const banner = document.getElementById('error-banner');
+  banner.hidden = true;
+  banner.textContent = '';
+}
+
+/* ---------- 4. Renderers ---------------------------------- */
+
+function renderKPIs() {
+  const active = getActiveRecords();
+  const counts = { total: active.length, apptBooked: 0 };
+  for (const c of CATEGORIES) counts[c] = 0;
+  for (const r of active) {
+    if (counts[r.statusCategory] != null) counts[r.statusCategory]++;
+    if (APPT_BOOKED_STATUSES.has(normStatus(r.statusRaw))) counts.apptBooked++;
+  }
+  document.getElementById('kpi-total').textContent    = counts.total.toLocaleString();
+  document.getElementById('kpi-current').textContent  = counts.apptBooked.toLocaleString();
+  document.getElementById('kpi-building').textContent = counts['Building a Pool'].toLocaleString();
+  document.getElementById('kpi-followup').textContent = counts['Follow Up Leads'].toLocaleString();
+  document.getElementById('kpi-nofollow').textContent = counts['No Follow Up'].toLocaleString();
+}
+
+/* --- Chart refresh logic ---
+ * Chart.js throws "Canvas is already in use" if a new chart is bound to a
+ * canvas that still has an active instance. Before every render we destroy
+ * the old instance (if any) and store the new one in state.charts.
+ */
+function renderYearlyChart() {
+  // One line per year, x-axis Jan..Dec, y = count.
+  // Months with no data are stored as null so Chart.js draws a gap instead
+  // of dropping the line to zero (prevents a flat line for future months
+  // in the current year that haven't happened yet).
+  const byYear = {};
+  for (const r of state.records) {
+    if (r.year == null || r.monthIndex == null) continue;
+    if (!byYear[r.year]) byYear[r.year] = Array(12).fill(null);
+    byYear[r.year][r.monthIndex] = (byYear[r.year][r.monthIndex] || 0) + 1;
+  }
+  const years = Object.keys(byYear).map(Number).sort();
+  const palette = [cssVar('--c-current'), cssVar('--c-building'), cssVar('--c-followup'), cssVar('--c-nofollow'), cssVar('--c-other')];
+  const datasets = years.map((y, i) => ({
+    label: String(y),
+    data: byYear[y],
+    borderColor: palette[i % palette.length],
+    backgroundColor: palette[i % palette.length],
+    tension: 0.25,
+    fill: false,
+    pointRadius: 3,
+    spanGaps: false,   // don't connect through null months
+  }));
+
+  const ctx = document.getElementById('chart-yearly');
+  state.charts.yearly?.destroy();
+  state.charts.yearly = new Chart(ctx, {
+    type: 'line',
+    data: { labels: MONTH_NAMES, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: { legend: { position: 'bottom', labels: { color: cssVar('--text-soft') } } },
+      scales: {
+        x: { ticks: { color: cssVar('--text-soft') }, grid: { display: false } },
+        y: { ticks: { color: cssVar('--text-soft'), precision: 0 }, grid: { color: cssVar('--border') }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+/* Year-over-year comparison: for every month that the latest year has data
+ * for, show that month's lead count side-by-side with the previous year's
+ * count for the same month. Answers "how are we tracking vs. last year so
+ * far?" — the question the yearly chart on its own doesn't make obvious. */
+function renderYoYChart() {
+  const years = [...new Set(state.records.map(r => r.year).filter(y => y != null))];
+  const ctx = document.getElementById('chart-yoy');
+  state.charts.yoy?.destroy();
+  if (!years.length) { state.charts.yoy = null; return; }
+
+  const latestYear = Math.max(...years);
+  const prevYear   = latestYear - 1;
+
+  const monthsInLatest = new Set();
+  for (const r of state.records) {
+    if (r.year === latestYear && r.monthIndex != null) monthsInLatest.add(r.monthIndex);
+  }
+  const months = [...monthsInLatest].sort((a, b) => a - b);
+  if (!months.length) { state.charts.yoy = null; return; }
+
+  const countFor = (year, mIdx) =>
+    state.records.filter(r => r.year === year && r.monthIndex === mIdx).length;
+
+  const labels = months.map(m => MONTH_NAMES[m]);
+  const latestData = months.map(m => countFor(latestYear, m));
+  const prevData   = months.map(m => countFor(prevYear, m));
+  const hasPrev    = prevData.some(v => v > 0);
+
+  const datasets = [{
+    label: String(latestYear),
+    data: latestData,
+    backgroundColor: cssVar('--c-current'),
+    borderRadius: 4,
+  }];
+  if (hasPrev) {
+    datasets.push({
+      label: String(prevYear),
+      data: prevData,
+      backgroundColor: cssVar('--c-other'),
+      borderRadius: 4,
+    });
+  }
+
+  state.charts.yoy = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: { legend: { position: 'bottom', labels: { color: cssVar('--text-soft') } } },
+      scales: {
+        x: { ticks: { color: cssVar('--text-soft') }, grid: { display: false } },
+        y: { ticks: { color: cssVar('--text-soft'), precision: 0 }, grid: { color: cssVar('--border') }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+/* Filter the ads records by the global period selector. Year periods include
+ * every month within that year. Month periods narrow to a single record. */
+function getActiveAdsRecords() {
+  if (!state.period) return state.adsRecords;
+  if (state.period.startsWith('year:')) {
+    const yearPrefix = state.period.slice(5) + '-';
+    return state.adsRecords.filter(a => a.month && a.month.startsWith(yearPrefix));
+  }
+  return state.adsRecords.filter(a => a.month === state.period);
+}
+
+function adsTotals(records) {
+  const t = { clicks: 0, impressions: 0, cost: 0, phoneCalls: 0, conversions: 0 };
+  for (const r of records) {
+    t.clicks       += Number(r.clicks)       || 0;
+    t.impressions  += Number(r.impressions)  || 0;
+    t.cost         += Number(r.cost)         || 0;
+    t.phoneCalls   += Number(r.phoneCalls)   || 0;
+    t.conversions  += Number(r.conversions)  || 0;
+  }
+  return t;
+}
+
+function fmtMoney(n) { return '$' + Number(n).toFixed(2); }
+function fmtNum(n) { return Number(n).toLocaleString(); }
+function fmtPct(n) { return (Number(n)).toFixed(2) + '%'; }
+function fmtMonthLabel(monthKey) {
+  if (!monthKey) return '';
+  const [y, m] = monthKey.split('-');
+  return `${MONTH_NAMES[Number(m) - 1]} ${y}`;
+}
+
+function renderAdsKPIs() {
+  const t = adsTotals(getActiveAdsRecords());
+  const ctr      = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0;
+  const costPerC = t.conversions > 0 ? (t.cost / t.conversions) : 0;
+  document.getElementById('ads-clicks').textContent      = fmtNum(t.clicks);
+  document.getElementById('ads-impressions').textContent = fmtNum(t.impressions);
+  document.getElementById('ads-ctr').textContent         = fmtPct(ctr);
+  document.getElementById('ads-cost').textContent        = fmtMoney(t.cost);
+  document.getElementById('ads-calls').textContent       = fmtNum(t.phoneCalls);
+  document.getElementById('ads-conv').textContent        = fmtNum(t.conversions);
+  document.getElementById('ads-costconv').textContent    = costPerC > 0 ? fmtMoney(costPerC) : '—';
+}
+
+function renderAdsChart() {
+  const ctx = document.getElementById('chart-ads');
+  state.charts.ads?.destroy();
+  if (!state.adsRecords.length) { state.charts.ads = null; return; }
+  const sorted = [...state.adsRecords].sort((a, b) => a.month.localeCompare(b.month));
+  const labels = sorted.map(r => fmtMonthLabel(r.month));
+  state.charts.ads = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'New enquiries', data: sorted.map(r => Number(r.conversions) || 0), backgroundColor: cssVar('--c-current'),  borderRadius: 4, yAxisID: 'y' },
+        { label: 'Ad spend ($)',  data: sorted.map(r => Number(r.cost) || 0),        backgroundColor: cssVar('--c-followup'), borderRadius: 4, yAxisID: 'y1' },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: { legend: { position: 'bottom', labels: { color: cssVar('--text-soft') } } },
+      scales: {
+        x:  { ticks: { color: cssVar('--text-soft') }, grid: { display: false } },
+        y:  { position: 'left',  beginAtZero: true, ticks: { color: cssVar('--text-soft'), precision: 0 }, grid: { color: cssVar('--border') }, title: { display: true, text: 'New enquiries', color: cssVar('--text-soft') } },
+        y1: { position: 'right', beginAtZero: true, ticks: { color: cssVar('--text-soft') }, grid: { display: false }, title: { display: true, text: 'Ad spend ($)', color: cssVar('--text-soft') } },
+      },
+    },
+  });
+}
+
+function renderAdsTable() {
+  const tbody = document.getElementById('ads-tbody');
+  // Chronological order: earliest month first, latest at the bottom
+  const sorted = [...state.adsRecords].sort((a, b) => a.month.localeCompare(b.month));
+  if (!sorted.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-soft);padding:18px;">No Google Ads data yet — click <strong>+ Add monthly data</strong> to enter a month.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = sorted.map(r => {
+    const ctr = r.impressions > 0 ? (r.clicks / r.impressions) * 100 : 0;
+    const cpe = r.conversions > 0 ? (r.cost / r.conversions) : 0;
+    return `
+      <tr data-month="${escapeAttr(r.month)}">
+        <td>${escapeHtml(fmtMonthLabel(r.month))}</td>
+        <td>${fmtMoney(r.cost)}</td>
+        <td>${fmtNum(r.conversions || 0)}</td>
+        <td>${cpe > 0 ? fmtMoney(cpe) : '—'}</td>
+        <td>${fmtNum(r.phoneCalls || 0)}</td>
+        <td>${fmtNum(r.clicks)}</td>
+        <td>${fmtNum(r.impressions)}</td>
+        <td>${fmtPct(ctr)}</td>
+        <td class="col-actions">
+          <button type="button" class="row-edit" title="Edit this month" aria-label="Edit">✎</button>
+          <button type="button" class="row-delete" title="Delete this month" aria-label="Delete">×</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+/* ---------- Facebook & Instagram Ads renderers ---------- */
+function getActiveFbRecords() {
+  if (!state.period) return state.fbRecords;
+  if (state.period.startsWith('year:')) {
+    const yearPrefix = state.period.slice(5) + '-';
+    return state.fbRecords.filter(r => r.month && r.month.startsWith(yearPrefix));
+  }
+  return state.fbRecords.filter(r => r.month === state.period);
+}
+
+function fbCampaignTotals(campaign, records) {
+  const t = { spend: 0, impressions: 0, clicks: 0, result: 0 };
+  for (const r of records) {
+    if (r.campaign !== campaign) continue;
+    t.spend       += Number(r.spend) || 0;
+    t.impressions += Number(r.impressions) || 0;
+    t.clicks      += Number(r.clicks) || 0;
+    t.result      += Number(r.result) || 0;
+  }
+  return t;
+}
+
+function renderFbKPIs() {
+  const active = getActiveFbRecords();
+
+  // Top: total spend across all campaigns
+  const grandSpend = active.reduce((n, r) => n + (Number(r.spend) || 0), 0);
+  document.getElementById('fb-total-spend').textContent = fmtMoney(grandSpend);
+
+  // Per-campaign breakdown
+  for (const key of FB_CAMPAIGN_KEYS) {
+    const t = fbCampaignTotals(key, active);
+    const cpr = t.result > 0 ? t.spend / t.result : 0;
+    document.getElementById(`fb-${key}-spend`).textContent   = fmtMoney(t.spend);
+    document.getElementById(`fb-${key}-results`).textContent = fmtNum(t.result);
+    document.getElementById(`fb-${key}-cpr`).textContent     = cpr > 0 ? fmtMoney(cpr) : '—';
+    document.getElementById(`fb-${key}-impr`).textContent    = fmtNum(t.impressions);
+    document.getElementById(`fb-${key}-clicks`).textContent  = fmtNum(t.clicks);
+  }
+}
+
+function renderFbTable() {
+  const tbody = document.getElementById('fb-tbody');
+  // Earliest month first; within a month group by campaign type
+  const sorted = [...state.fbRecords].sort((a, b) => {
+    if (a.month !== b.month) return a.month.localeCompare(b.month);
+    return FB_CAMPAIGN_KEYS.indexOf(a.campaign) - FB_CAMPAIGN_KEYS.indexOf(b.campaign);
+  });
+  if (!sorted.length) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-soft);padding:18px;">No Facebook Ads data yet — click <strong>+ Add monthly data</strong> to enter a campaign month.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = sorted.map(r => {
+    const camp = FB_CAMPAIGNS[r.campaign] || { name: r.campaign, resultShort: 'Result', costLabel: '' };
+    const cpr = (Number(r.result) || 0) > 0 ? (Number(r.spend) || 0) / Number(r.result) : 0;
+    return `
+      <tr data-month="${escapeAttr(r.month)}" data-campaign="${escapeAttr(r.campaign)}">
+        <td>${escapeHtml(fmtMonthLabel(r.month))}</td>
+        <td>${escapeHtml(camp.name)}</td>
+        <td>${fmtMoney(r.spend)}</td>
+        <td>${fmtNum(r.result || 0)} ${escapeHtml(camp.resultShort.toLowerCase())}</td>
+        <td>${cpr > 0 ? fmtMoney(cpr) : '—'}</td>
+        <td>${fmtNum(r.impressions || 0)}</td>
+        <td>${fmtNum(r.clicks || 0)}</td>
+        <td class="col-actions">
+          <button type="button" class="row-edit" title="Edit this entry" aria-label="Edit">✎</button>
+          <button type="button" class="row-delete" title="Delete this entry" aria-label="Delete">×</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+/* Count occurrences of a field across records, return [[label, count], ...]
+ * sorted descending. If more than `topN` distinct values exist, the tail is
+ * collapsed into a single "Other" bucket.
+ * Options:
+ *   mergeUnknown  -> fold empty values into the Other slice
+ *   excludeEmpty  -> drop empty values entirely (cleanest donut for fields
+ *                    like Location where a lot of leads may not have data)
+ * Also returns `.emptyCount` so callers can surface it in a footer if wanted.
+ */
+function topNBreakdown(field, topN, opts = {}) {
+  // Accept legacy boolean "mergeUnknown" form for backwards compatibility
+  if (typeof opts === 'boolean') opts = { mergeUnknown: opts };
+  const { mergeUnknown = false, excludeEmpty = false } = opts;
+
+  const counts = {};
+  let emptyCount = 0;
+  for (const r of getActiveRecords()) {
+    const raw = r[field] && String(r[field]).trim();
+    if (!raw) { emptyCount++; continue; }
+    counts[raw] = (counts[raw] || 0) + 1;
+  }
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const top = sorted.slice(0, topN);
+  let otherCount = sorted.slice(topN).reduce((n, [, c]) => n + c, 0);
+
+  if (!excludeEmpty) {
+    if (mergeUnknown) {
+      otherCount += emptyCount;
+    } else if (emptyCount > 0) {
+      top.push(['(unknown)', emptyCount]);
+    }
+  }
+  if (otherCount > 0) top.push(['Other', otherCount]);
+
+  top.emptyCount = emptyCount;
+  return top;
+}
+
+/* Palette for categorical doughnut charts — distinct hues that work on both
+ * light and dark backgrounds. Looped if a chart has more slices than colours. */
+const CHART_PALETTE = [
+  '#2563eb', '#059669', '#d97706', '#7c3aed', '#0891b2',
+  '#db2777', '#ca8a04', '#4f46e5', '#16a34a', '#e11d48',
+];
+const OTHER_COLOR = '#9ca3af';
+
+/* Shared doughnut config so Source and Location look consistent. Tooltips show
+ * both count and percentage so the chart is useful without reading labels. */
+function doughnutOptions() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 400 },
+    plugins: {
+      legend: { position: 'bottom', labels: { color: cssVar('--text-soft'), boxWidth: 12, padding: 10 } },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => {
+            const total = ctx.dataset.data.reduce((a, b) => a + b, 0) || 1;
+            const pct = ((ctx.parsed / total) * 100).toFixed(1);
+            return `${ctx.label}: ${ctx.parsed} (${pct}%)`;
+          },
+        },
+      },
+    },
+  };
+}
+function doughnutColors(labels) {
+  return labels.map((label, i) =>
+    label === 'Other' || label === '(unknown)' ? OTHER_COLOR : CHART_PALETTE[i % CHART_PALETTE.length]
+  );
+}
+
+function renderSourceChart() {
+  const data = topNBreakdown('leadSource', 10);
+  const labels = data.map(d => d[0]);
+  const ctx = document.getElementById('chart-source');
+  state.charts.source?.destroy();
+  state.charts.source = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: data.map(d => d[1]),
+        backgroundColor: doughnutColors(labels),
+        borderColor: cssVar('--surface'),
+        borderWidth: 2,
+      }],
+    },
+    options: doughnutOptions(),
+  });
+}
+
+function renderLocationChart() {
+  // Exclude leads with no location — otherwise an empty-location majority
+  // drowns the chart as a grey "Other" slice. Show it as a caption instead.
+  const data = topNBreakdown('location', 10, { excludeEmpty: true });
+  const labels = data.map(d => d[0]);
+  const ctx = document.getElementById('chart-location');
+  state.charts.location?.destroy();
+  state.charts.location = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: data.map(d => d[1]),
+        backgroundColor: doughnutColors(labels),
+        borderColor: cssVar('--surface'),
+        borderWidth: 2,
+      }],
+    },
+    options: doughnutOptions(),
+  });
+
+  // Caption: how many leads were excluded for missing location
+  const caption = document.getElementById('chart-location-caption');
+  if (caption) {
+    caption.textContent = data.emptyCount > 0
+      ? `${data.emptyCount} lead${data.emptyCount === 1 ? '' : 's'} with no location — excluded from this chart.`
+      : '';
+  }
+}
+
+/* Populate the global period selector. Two tiers of options:
+ *   1. One "Yearly overview — YYYY" per year present in the data
+ *   2. One entry per month present in the data, sorted chronologically
+ * No combined "total overview" option — the dashboard always scopes to a
+ * specific year or month. Default selection is the most recent year. */
+function populatePeriodOptions() {
+  const months = new Map();  // 'YYYY-MM' -> display label
+  const years  = new Set();
+  for (const r of state.records) {
+    if (r.month && r.monthDisplay) months.set(r.month, r.monthDisplay);
+    if (r.year != null) years.add(r.year);
+  }
+  // Sort descending so the most recent year / month is at the top of the menu
+  const sortedMonths = [...months.entries()].sort(([a], [b]) => b.localeCompare(a));
+  const sortedYears  = [...years].sort((a, b) => b - a);
+
+  const sel = document.getElementById('period-select');
+  const current = state.period;
+
+  let html = '';
+  if (sortedYears.length) {
+    html += '<optgroup label="Yearly overview">';
+    for (const y of sortedYears) {
+      html += `<option value="year:${y}">Yearly overview — ${y}</option>`;
+    }
+    html += '</optgroup>';
+  }
+  if (sortedMonths.length) {
+    html += '<optgroup label="Specific month">';
+    for (const [key, label] of sortedMonths) {
+      html += `<option value="${escapeAttr(key)}">${escapeHtml(label)}</option>`;
+    }
+    html += '</optgroup>';
+  }
+  sel.innerHTML = html;
+
+  // Preserve selection if still valid; otherwise default to the most recent year
+  const valid = new Set([
+    ...sortedYears.map(y => `year:${y}`),
+    ...sortedMonths.map(([k]) => k),
+  ]);
+  // With descending sort, the most recent entry is now at index 0
+  if (valid.has(current)) {
+    sel.value = current;
+  } else if (sortedYears.length) {
+    sel.value = `year:${sortedYears[0]}`;
+  } else if (sortedMonths.length) {
+    sel.value = sortedMonths[0][0];
+  } else {
+    sel.value = '';
+  }
+  state.period = sel.value;
+  // Keep the hint visible and accurate now that there is no "all data" default
+  document.getElementById('period-hint').textContent =
+    'KPIs and source/location charts reflect the selected period. The yearly chart below still shows all data for comparison.';
+}
+
+function populateFilterOptions() {
+  const years    = new Set();
+  const sheets   = new Set();
+  const observedCats = new Set();
+  for (const r of state.records) {
+    if (r.year != null) years.add(r.year);
+    if (r.sheetName) sheets.add(r.sheetName);
+    if (r.statusCategory) observedCats.add(r.statusCategory);
+  }
+
+  fillSelect('filter-year', [...years].sort((a,b) => a-b).map(y => [String(y), String(y)]));
+  fillSelect('filter-sheet', [...sheets].sort().map(s => [s, s]));
+
+  // Category dropdown always contains the 4 dashboard categories plus the
+  // "Appointment Booked" cross-category roll-up (so every KPI drill-down
+  // works even if that bucket has zero rows). Extras like "Other" or
+  // "Unknown" actually observed in the data are appended.
+  const catOptions = [APPT_BOOKED_LABEL, ...CATEGORIES];
+  for (const c of observedCats) if (!catOptions.includes(c)) catOptions.push(c);
+  fillSelect('filter-category', catOptions.map(c => [c, c]));
+}
+function fillSelect(id, pairs) {
+  const sel = document.getElementById(id);
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All</option>' +
+    pairs.map(([v, label]) => `<option value="${escapeAttr(v)}">${escapeHtml(label)}</option>`).join('');
+  // Preserve selection if still valid
+  if (pairs.some(([v]) => v === current)) sel.value = current;
+}
+
+function renderPreview() {
+  const year = document.getElementById('filter-year').value;
+  const sheet = document.getElementById('filter-sheet').value;
+  const cat = document.getElementById('filter-category').value;
+
+  // Start from the period-filtered set so the preview matches the KPIs/charts.
+  // "Appointment Booked" is a cross-category roll-up — filter by raw status
+  // against the booking set instead of matching statusCategory.
+  const matchesCategory = (r) => {
+    if (!cat) return true;
+    if (cat === APPT_BOOKED_LABEL) return APPT_BOOKED_STATUSES.has(normStatus(r.statusRaw));
+    return r.statusCategory === cat;
+  };
+  const filtered = getActiveRecords().filter(r =>
+    (!year  || String(r.year) === year) &&
+    (!sheet || r.sheetName === sheet) &&
+    matchesCategory(r)
+  );
+
+  const shown = filtered.slice(0, 200);
+  const label = state.period ? ` in ${escapeHtml(getPeriodLabel())}` : '';
+  document.getElementById('filter-summary').innerHTML =
+    `Showing ${shown.length} of ${filtered.length} matching leads${label} (${state.records.length} total parsed).`;
+
+  const tbody = document.getElementById('preview-tbody');
+  // Category options are the possible values statusCategory can hold.
+  // (Not "Appointment Booked" — that's a filter roll-up, not a stored value.)
+  const EDITABLE_CATS = ['Current Leads', 'Building a Pool', 'Follow Up Leads', 'No Follow Up', 'Other', 'Unknown'];
+
+  tbody.innerHTML = shown.map(r => {
+    const key = recordKey(r);
+    const catOptions = EDITABLE_CATS
+      .map(c => `<option value="${escapeAttr(c)}"${c === r.statusCategory ? ' selected' : ''}>${escapeHtml(c)}</option>`)
+      .join('');
+    return `
+    <tr data-key="${escapeAttr(key)}">
+      <td>${r.enquiryDate ? formatDate(r.enquiryDate) : (r.monthDisplay || '')}</td>
+      <td>${escapeHtml(r.firstName || '')}</td>
+      <td>${escapeHtml(r.surname || '')}</td>
+      <td><input class="row-input" data-field="statusRaw" value="${escapeAttr(r.statusRaw || '')}" /></td>
+      <td><select class="row-select cat-select" data-field="statusCategory" data-cat="${escapeAttr(r.statusCategory)}">${catOptions}</select></td>
+      <td><input class="row-input" data-field="leadSource" value="${escapeAttr(r.leadSource || '')}" /></td>
+      <td><input class="row-input" data-field="location" value="${escapeAttr(r.location || '')}" /></td>
+      <td>${escapeHtml(truncate(r.notes || '', 120))}</td>
+      <td class="col-actions"><button type="button" class="row-delete" title="Delete this lead" aria-label="Delete this lead">×</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderDebug() {
+  const d = state.debug;
+  const unmatchedStatusEntries = Object.entries(d.unmatchedStatuses).sort((a,b) => b[1]-a[1]);
+  const undatedCount = d.sheets.reduce((n, s) => n + s.missingDate, 0);
+
+  const sheetsHtml = d.sheets.map(s => `
+    <li>
+      <strong>${escapeHtml(s.name)}</strong> —
+      header row: ${s.headerRow === -1 ? '<em>not detected (sheet skipped)</em>' : `row ${s.headerRow + 1}`},
+      rows parsed: ${s.rowsParsed},
+      matched columns: ${s.matched.length ? '<code>' + s.matched.join(', ') + '</code>' : '<em>none</em>'}
+      ${s.unmatched.length ? `, unmatched headers: <code>${s.unmatched.map(escapeHtml).join(', ')}</code>` : ''}
+    </li>
+  `).join('');
+
+  const unmatchedHtml = unmatchedStatusEntries.length
+    ? '<ul class="debug-list">' + unmatchedStatusEntries.map(([s, n]) => `<li><code>${escapeHtml(s)}</code> — ${n}</li>`).join('') + '</ul>'
+    : '<em>None — every raw status mapped to a known category.</em>';
+
+  document.getElementById('debug-body').innerHTML = `
+    <p>Total rows parsed: <strong>${state.records.length}</strong>. Rows with unparseable / missing date (used sheet-name fallback or were left undated): <strong>${undatedCount}</strong>.</p>
+    <h3>Detected worksheets</h3>
+    <ul class="debug-list">${sheetsHtml}</ul>
+    <h3>Unmatched raw statuses (grouped as "Other")</h3>
+    ${unmatchedHtml}
+  `;
+}
+
+/* ---------- Helpers ---------- */
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+function truncate(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+function formatDate(d) {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
+/* ---------- 5. Events ------------------------------------- */
+
+document.getElementById('file-input').addEventListener('change', async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  document.getElementById('file-name').textContent = file.name;
+  clearError();
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    const { records, debug } = parseWorkbook(wb);
+    if (records.length === 0) {
+      showError('No lead rows were found in this workbook. Check the Assumptions & debug panel below for details.');
+      document.getElementById('debug-section').hidden = false;
+      state.debug = mergeDebug(state.debug, debug);
+      renderDebug();
+      ev.target.value = '';
+      return;
+    }
+
+    // Merge new records with anything previously saved (dedupe by content key)
+    const { merged, added, skipped } = mergeRecords(state.records, records);
+    state.records = merged;
+    state.debug = mergeDebug(state.debug, debug);
+
+    document.getElementById('merge-status').textContent =
+      skipped > 0
+        ? `+${added} new lead${added === 1 ? '' : 's'} (${skipped} duplicate${skipped === 1 ? '' : 's'} skipped)`
+        : `+${added} new lead${added === 1 ? '' : 's'}`;
+
+    saveState();
+    renderAll();
+  } catch (err) {
+    console.error(err);
+    showError('Failed to parse this file: ' + (err && err.message ? err.message : err));
+  }
+  // allow re-uploading the same filename
+  ev.target.value = '';
+});
+
+/* Clear data: wipe localStorage + reset dashboard. Confirm first so a misclick
+ * doesn't nuke months of history. */
+document.getElementById('clear-data').addEventListener('click', () => {
+  if (!state.records.length && !localStorage.getItem(STORAGE_KEY)) return;
+  if (!confirm('Remove all saved lead data from this browser? This cannot be undone.')) return;
+  clearSavedData();
+});
+
+/* Backup: download all saved leads as a JSON file the user can keep on disk
+ * or in cloud storage. Independent of localStorage so it survives browser
+ * resets, switching computers, etc. */
+document.getElementById('export-data').addEventListener('click', () => {
+  if (!state.records.length) {
+    alert('No data to back up yet. Upload your workbook first.');
+    return;
+  }
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    records: state.records.map(r => ({
+      ...r,
+      enquiryDate: r.enquiryDate ? r.enquiryDate.toISOString() : null,
+    })),
+    debug: state.debug,
+    adsRecords: state.adsRecords,
+    fbRecords: state.fbRecords,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `bostock-leads-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  document.getElementById('merge-status').textContent =
+    `Backup downloaded (${state.records.length} lead${state.records.length === 1 ? '' : 's'})`;
+});
+
+/* Restore: load a backup JSON file and merge it with the current data.
+ * Uses the same dedupe logic as upload so re-importing the same backup
+ * doesn't duplicate anything. */
+document.getElementById('import-data-input').addEventListener('change', async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    if (!payload || !Array.isArray(payload.records)) throw new Error('File does not look like a Bostock backup.');
+    const incoming = payload.records.map(r => {
+      const rec = {
+        ...r,
+        enquiryDate: r.enquiryDate ? new Date(r.enquiryDate) : null,
+      };
+      if (rec.statusCategory === 'Currently Building') rec.statusCategory = 'Building a Pool';
+      return rec;
+    });
+    const { merged, added, skipped } = mergeRecords(state.records, incoming);
+    state.records = merged;
+    if (payload.debug) state.debug = mergeDebug(state.debug, payload.debug);
+    // Merge ads records too — newer entry per-month wins
+    if (Array.isArray(payload.adsRecords)) {
+      const adsMap = new Map(state.adsRecords.map(a => [a.month, a]));
+      for (const a of payload.adsRecords) adsMap.set(a.month, a);
+      state.adsRecords = [...adsMap.values()];
+    }
+    // Merge Facebook records — keyed by (month + campaign), newer wins
+    if (Array.isArray(payload.fbRecords)) {
+      const fbKey = (r) => `${r.month}|${r.campaign}`;
+      const fbMap = new Map(state.fbRecords.map(r => [fbKey(r), r]));
+      for (const r of payload.fbRecords) fbMap.set(fbKey(r), r);
+      state.fbRecords = [...fbMap.values()];
+    }
+    saveState();
+    renderAll();
+    document.getElementById('merge-status').textContent =
+      `Restored +${added} new lead${added === 1 ? '' : 's'} from backup` + (skipped ? ` (${skipped} duplicate${skipped === 1 ? '' : 's'} skipped)` : '');
+  } catch (err) {
+    showError('Could not read that backup file: ' + (err && err.message ? err.message : err));
+  }
+  ev.target.value = '';
+});
+
+/* Download PDF: refresh the print header with the current period and date,
+ * then open the browser's print dialog. The user picks "Save as PDF" as the
+ * destination to get a file they can email. Print-only CSS hides the
+ * controls, debug panel and filters so the PDF is report-ready. */
+/* Build the period string that appears in the PDF title.
+ * Uses the full month name (e.g. "March 2026") rather than the abbreviated
+ * form so the report reads naturally when sent by email. */
+function getPrintPeriodLabel() {
+  if (!state.period) return '';
+  if (state.period.startsWith('year:')) return `Year ${state.period.slice(5)}`;
+  const [y, m] = state.period.split('-');
+  return `${MONTH_NAMES_LONG[Number(m) - 1]} ${y}`;
+}
+
+function updatePrintHeader() {
+  const periodText = getPrintPeriodLabel();
+  document.getElementById('print-title').textContent =
+    periodText ? `Bostock Leads Report — ${periodText}` : 'Bostock Leads Report';
+  const generated = new Date().toLocaleDateString(undefined, {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+  document.getElementById('print-subtitle').textContent =
+    `Total leads: ${getActiveRecords().length}  ·  Generated ${generated}`;
+}
+document.getElementById('download-pdf').addEventListener('click', () => {
+  if (!state.records.length) {
+    alert('Upload a workbook first — there is no data to export yet.');
+    return;
+  }
+  updatePrintHeader();
+  // Small delay lets the browser apply print CSS and gives Chart.js a chance
+  // to resize canvases to the print-layout container before the dialog opens
+  setTimeout(() => window.print(), 200);
+});
+
+/* Chart.js caches its canvas size at create time — when the print CSS resizes
+ * the container, the canvas must be told to resize or it will render at the
+ * old (smaller) on-screen dimensions. Hooking both print events covers PDF
+ * export and returning to the screen afterwards. */
+function resizeAllCharts() {
+  for (const c of Object.values(state.charts)) {
+    try { c?.resize(); } catch (e) { /* noop */ }
+  }
+}
+window.addEventListener('beforeprint', resizeAllCharts);
+window.addEventListener('afterprint', resizeAllCharts);
+
+for (const id of ['filter-year','filter-sheet','filter-category']) {
+  document.getElementById(id).addEventListener('change', renderPreview);
+}
+
+/* Period selector: changing the global period re-renders the KPIs, source,
+ * location and preview. The yearly chart stays all-time so you can still
+ * compare months across years while drilled into a single month. */
+document.getElementById('period-select').addEventListener('change', (ev) => {
+  state.period = ev.target.value;
+  renderKPIs();
+  renderSourceChart();
+  renderLocationChart();
+  renderAdsKPIs();
+  renderFbKPIs();
+  renderPreview();
+});
+
+/* Find a record by the content key stored on a row. */
+function findRecordIndexByRow(tr) {
+  if (!tr) return -1;
+  const key = tr.dataset.key;
+  return state.records.findIndex(r => recordKey(r) === key);
+}
+
+/* Per-row delete: click the ✕ in the preview table to remove a single lead. */
+document.getElementById('preview-tbody').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button.row-delete');
+  if (!btn) return;
+  const tr = btn.closest('tr');
+  const idx = findRecordIndexByRow(tr);
+  if (idx < 0) return;
+  const r = state.records[idx];
+  const name = [r.firstName, r.surname].filter(Boolean).join(' ') || '(unnamed lead)';
+  if (!confirm(`Delete lead "${name}"? This cannot be undone.`)) return;
+  state.records.splice(idx, 1);
+  saveState();
+  if (state.records.length) {
+    renderAll();
+  } else {
+    clearSavedData();
+  }
+});
+
+/* Inline edits: Status, Category and Lead Source can be updated directly in
+ * the preview table. Listens for 'change' (fires on blur/Enter for inputs,
+ * on selection for selects) so we don't re-render on every keystroke. When
+ * Status is edited, Category is automatically re-derived from the new raw
+ * status — the user can then override the dropdown if they want. */
+document.getElementById('preview-tbody').addEventListener('change', (ev) => {
+  const el = ev.target;
+  if (!el.classList.contains('row-input') && !el.classList.contains('row-select')) return;
+  const tr = el.closest('tr');
+  const idx = findRecordIndexByRow(tr);
+  if (idx < 0) return;
+
+  const field = el.dataset.field;
+  const value = el.value.trim();
+  const r = state.records[idx];
+
+  if (field === 'statusRaw') {
+    r.statusRaw = value;
+    r.statusCategory = categorizeStatus(value);
+  } else if (field === 'statusCategory') {
+    r.statusCategory = value;  // manual override
+  } else if (field === 'leadSource') {
+    r.leadSource = value;
+  } else if (field === 'location') {
+    r.location = value;
+  }
+
+  saveState();
+  renderAll();
+});
+
+/* KPI drill-down: clicking a KPI card sets the category filter and scrolls
+ * to the preview table so the user sees the matching leads immediately. */
+function drillIntoCategory(cat) {
+  if (!state.records.length) return;
+  const sel = document.getElementById('filter-category');
+  sel.value = cat || '';
+  renderPreview();
+  document.getElementById('preview-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+for (const kpi of document.querySelectorAll('.kpi[data-cat]')) {
+  kpi.addEventListener('click', () => drillIntoCategory(kpi.dataset.cat));
+  kpi.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); drillIntoCategory(kpi.dataset.cat); }
+  });
+}
+
+/* ---------- Theme toggle (persisted) ---------- */
+const themeToggle = document.getElementById('theme-toggle');
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  themeToggle.textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
+  // Recolour live charts (colours come from CSS vars, which changed with the theme)
+  if (state.records.length) {
+    renderYearlyChart();
+    renderSourceChart();
+    renderLocationChart();
+    renderYoYChart();
+  }
+}
+themeToggle.addEventListener('click', () => {
+  const current = document.documentElement.getAttribute('data-theme') || 'light';
+  const next = current === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('bostock-theme', next);
+  applyTheme(next);
+});
+applyTheme(localStorage.getItem('bostock-theme') || 'light');
+
+/* ---------- Google Ads modal: add / edit a month ---------- */
+const adsModal = document.getElementById('ads-form-modal');
+const adsForm  = document.getElementById('ads-form');
+
+function openAdsForm(month) {
+  // If a month is provided, prefill the form for editing; otherwise blank.
+  const existing = month ? state.adsRecords.find(a => a.month === month) : null;
+  document.getElementById('ads-form-title').textContent =
+    existing ? `Edit ${fmtMonthLabel(month)}` : 'Add monthly Google Ads data';
+  adsForm.querySelector('#ads-form-month').value        = existing ? existing.month : (month || new Date().toISOString().slice(0, 7));
+  adsForm.querySelector('#ads-form-clicks').value       = existing ? existing.clicks : '';
+  adsForm.querySelector('#ads-form-impressions').value  = existing ? existing.impressions : '';
+  adsForm.querySelector('#ads-form-cost').value         = existing ? existing.cost : '';
+  adsForm.querySelector('#ads-form-phonecalls').value   = existing ? (existing.phoneCalls || 0) : '';
+  adsForm.querySelector('#ads-form-conv').value         = existing ? (existing.conversions || 0) : '';
+  adsModal.hidden = false;
+  setTimeout(() => adsForm.querySelector('#ads-form-month').focus(), 30);
+}
+function closeAdsForm() { adsModal.hidden = true; adsForm.reset(); }
+
+document.getElementById('add-ads-month').addEventListener('click', () => openAdsForm());
+document.getElementById('ads-form-cancel').addEventListener('click', closeAdsForm);
+adsModal.addEventListener('click', (e) => { if (e.target === adsModal) closeAdsForm(); });
+
+adsForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const rec = {
+    month:        adsForm.querySelector('#ads-form-month').value,
+    clicks:       Number(adsForm.querySelector('#ads-form-clicks').value)      || 0,
+    impressions:  Number(adsForm.querySelector('#ads-form-impressions').value) || 0,
+    cost:         Number(adsForm.querySelector('#ads-form-cost').value)        || 0,
+    phoneCalls:   Number(adsForm.querySelector('#ads-form-phonecalls').value)  || 0,
+    conversions:  Number(adsForm.querySelector('#ads-form-conv').value)        || 0,
+  };
+  if (!rec.month) { alert('Please pick a month.'); return; }
+  // Replace any existing record for that month, otherwise append
+  const idx = state.adsRecords.findIndex(a => a.month === rec.month);
+  if (idx >= 0) state.adsRecords[idx] = rec;
+  else state.adsRecords.push(rec);
+  saveState();
+  closeAdsForm();
+  // Make sure the section becomes visible even if no leads exist yet
+  showDashboardSections();
+  renderAdsAll();
+  populatePeriodOptions();
+});
+
+/* Edit / delete on individual rows in the ads table */
+document.getElementById('ads-tbody').addEventListener('click', (ev) => {
+  const tr = ev.target.closest('tr[data-month]');
+  if (!tr) return;
+  const month = tr.dataset.month;
+  if (ev.target.closest('button.row-edit')) {
+    openAdsForm(month);
+  } else if (ev.target.closest('button.row-delete')) {
+    if (!confirm(`Delete the ${fmtMonthLabel(month)} Google Ads entry? This cannot be undone.`)) return;
+    state.adsRecords = state.adsRecords.filter(a => a.month !== month);
+    saveState();
+    renderAdsAll();
+  }
+});
+
+/* ---------- Facebook Ads modal: add / edit a campaign month ---------- */
+const fbModal = document.getElementById('fb-form-modal');
+const fbForm  = document.getElementById('fb-form');
+
+function updateFbResultLabel() {
+  const camp = FB_CAMPAIGNS[fbForm.querySelector('#fb-form-campaign').value];
+  if (!camp) return;
+  const labelEl = document.getElementById('fb-form-result-label');
+  // Replace label text node while preserving the .hint span and input child
+  const labelText = camp.resultLabel;
+  // Reconstruct safely
+  labelEl.firstChild.nodeValue = labelText;
+  document.getElementById('fb-form-result-hint').textContent = camp.formHint;
+}
+
+function openFbForm({ month, campaign } = {}) {
+  const existing = (month && campaign)
+    ? state.fbRecords.find(r => r.month === month && r.campaign === campaign)
+    : null;
+  document.getElementById('fb-form-title').textContent = existing
+    ? `Edit ${FB_CAMPAIGNS[campaign].name} — ${fmtMonthLabel(month)}`
+    : 'Add monthly Facebook Ads data';
+  fbForm.querySelector('#fb-form-month').value       = existing ? existing.month : (month || new Date().toISOString().slice(0, 7));
+  fbForm.querySelector('#fb-form-campaign').value    = existing ? existing.campaign : (campaign || 'leads');
+  fbForm.querySelector('#fb-form-spend').value       = existing ? existing.spend : '';
+  fbForm.querySelector('#fb-form-result').value      = existing ? existing.result : '';
+  fbForm.querySelector('#fb-form-impressions').value = existing ? existing.impressions : '';
+  fbForm.querySelector('#fb-form-clicks').value      = existing ? existing.clicks : '';
+  updateFbResultLabel();
+  fbModal.hidden = false;
+  setTimeout(() => fbForm.querySelector('#fb-form-month').focus(), 30);
+}
+function closeFbForm() { fbModal.hidden = true; fbForm.reset(); }
+
+document.getElementById('add-fb-month').addEventListener('click', () => openFbForm());
+document.getElementById('fb-form-cancel').addEventListener('click', closeFbForm);
+fbModal.addEventListener('click', (e) => { if (e.target === fbModal) closeFbForm(); });
+fbForm.querySelector('#fb-form-campaign').addEventListener('change', updateFbResultLabel);
+
+fbForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const rec = {
+    month:       fbForm.querySelector('#fb-form-month').value,
+    campaign:    fbForm.querySelector('#fb-form-campaign').value,
+    spend:       Number(fbForm.querySelector('#fb-form-spend').value)       || 0,
+    result:      Number(fbForm.querySelector('#fb-form-result').value)      || 0,
+    impressions: Number(fbForm.querySelector('#fb-form-impressions').value) || 0,
+    clicks:      Number(fbForm.querySelector('#fb-form-clicks').value)      || 0,
+  };
+  if (!rec.month) { alert('Please pick a month.'); return; }
+  if (!FB_CAMPAIGNS[rec.campaign]) { alert('Please pick a campaign type.'); return; }
+  // One record per (month, campaign) — replace if it already exists
+  const idx = state.fbRecords.findIndex(r => r.month === rec.month && r.campaign === rec.campaign);
+  if (idx >= 0) state.fbRecords[idx] = rec;
+  else state.fbRecords.push(rec);
+  saveState();
+  closeFbForm();
+  showDashboardSections();
+  renderFbAll();
+  populatePeriodOptions();
+});
+
+/* Edit / delete on individual rows in the FB table */
+document.getElementById('fb-tbody').addEventListener('click', (ev) => {
+  const tr = ev.target.closest('tr[data-month]');
+  if (!tr) return;
+  const month    = tr.dataset.month;
+  const campaign = tr.dataset.campaign;
+  if (ev.target.closest('button.row-edit')) {
+    openFbForm({ month, campaign });
+  } else if (ev.target.closest('button.row-delete')) {
+    const camp = FB_CAMPAIGNS[campaign] || { name: campaign };
+    if (!confirm(`Delete the ${camp.name} entry for ${fmtMonthLabel(month)}? This cannot be undone.`)) return;
+    state.fbRecords = state.fbRecords.filter(r => !(r.month === month && r.campaign === campaign));
+    saveState();
+    renderFbAll();
+  }
+});
+
+/* Restore previously saved data on page load so month-by-month history
+ * persists across browser sessions. */
+if (loadState()) {
+  renderAll();
+}
+</script>
+</body>
+</html>
