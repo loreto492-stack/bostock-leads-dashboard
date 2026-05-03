@@ -551,15 +551,13 @@
       html, body { width: auto; }
 
       /* Hide anything interactive that doesn't belong in a report.
-       * Preview table is also hidden — the report stays focused on visuals. */
+       * Preview table is hidden too — the report stays focused on numbers. */
       header.app-header,
       #period-section,
       #empty-state,
       #error-banner,
       #debug-section,
       #preview-section,
-      #ads-section,
-      #fb-section,
       .modal-overlay,
       .filters,
       .upload-btn,
@@ -582,28 +580,24 @@
       #print-title { font-size: 13pt; margin: 0; color: #1f2937; }
       #print-subtitle { color: #4b5563; font-size: 8pt; margin-top: 1px; }
 
-      /* Lock the whole dashboard to exactly one landscape A4 page.
-       * main becomes a flex column: header + KPIs take their natural height,
-       * charts-section grows to fill whatever's left. overflow:hidden is the
-       * safety net — if the browser's own header/footer bar steals some
-       * space, content scales down inside rather than spilling to page 2. */
+      /* Multi-page report layout: page 1 is leads, page 2 is Google Ads,
+       * page 3 is Facebook/Instagram Ads. Each section is forced onto its
+       * own fresh page via page-break-before. */
       main {
         padding: 0;
         margin: 0;
         width: 100%;
         max-width: 100%;
-        height: 100vh;
-        max-height: 100vh;
         box-sizing: border-box;
-        display: flex !important;
-        flex-direction: column !important;
-        gap: 4px;
-        overflow: hidden !important;
       }
-      section { margin-bottom: 0 !important; }
-      #print-header { flex: 0 0 auto; }
-      #kpi-section { flex: 0 0 auto; }
-      .kpi, .chart-card, .card { page-break-inside: avoid; }
+      section { margin-bottom: 8pt !important; }
+      .kpi, .ads-kpi, .fb-campaign, .chart-card { page-break-inside: avoid; }
+      tr { page-break-inside: avoid; }
+      table thead { display: table-header-group; }
+
+      /* Page-break controls: each major section starts on a fresh page.
+       * Charts section stays with KPIs on page 1 (no break before it). */
+      #ads-section, #fb-section { page-break-before: always; }
 
       /* Box-sizing + width safety nets: prevents any element from pushing past
        * the page width due to padding/border arithmetic or a Chart.js canvas
@@ -622,21 +616,11 @@
         overflow: hidden !important;
       }
 
-      /* Flatten the three separate .charts-grid containers into a single
-       * 3-row grid: row 1 is the two donuts side by side, rows 2 and 3 are
-       * the Yearly and YoY charts each spanning the full width.
-       * display:contents makes the .charts-grid wrappers disappear from
-       * layout while keeping their children in the DOM. Charts shrink to
-       * fit, guaranteeing the report fits on one landscape A4 page. */
+      /* Page 1 charts: 2-column donut row + two full-width line/bar rows.
+       * Heights are explicit so the layout doesn't depend on a flex parent. */
       #charts-section {
-        flex: 1 1 0 !important;
-        min-height: 0 !important;
         display: grid !important;
         grid-template-columns: 1fr 1fr !important;
-        /* Donuts get a compact row; Yearly and YoY each get a tall row so
-         * their line/bar charts can keep a readable aspect ratio rather
-         * than stretching wide and short across the page. */
-        grid-template-rows: 1fr 1.5fr 1.5fr !important;
         gap: 8px !important;
         margin-top: 0 !important;
         width: 100% !important;
@@ -647,13 +631,9 @@
         grid-column: 1 / -1 !important;
         align-items: center !important;
       }
-      /* Cap the line/bar chart's aspect ratio so it can't stretch super-wide
-       * across the full page width — chart centres itself with whitespace
-       * left and right when the cell is wider than 2.8:1 allows. */
+      /* Cap the line/bar chart's aspect ratio so it doesn't stretch too wide */
       .chart-card.full-width-card .chart-wrap {
-        flex: 0 1 auto !important;
         width: auto !important;
-        height: auto !important;
         aspect-ratio: 2.8 / 1 !important;
         max-width: 100% !important;
         max-height: 100% !important;
@@ -662,21 +642,21 @@
       .chart-card.full-width-card h2,
       .chart-card.full-width-card .chart-caption { align-self: stretch !important; }
 
-      /* Each chart-card stretches to fill its grid cell; chart-wrap then
-       * fills what's left after the h2. Everything scales to the available
-       * space rather than being pinned to a fixed pixel height. */
       .chart-card {
         display: flex !important;
         flex-direction: column !important;
-        height: 100% !important;
         min-height: 0 !important;
       }
+      /* Donut charts: tighter height. Full-width charts get more room. */
       .chart-card .chart-wrap {
-        flex: 1 1 0 !important;
-        min-height: 0 !important;
-        height: auto !important;
+        min-height: 110pt !important;
+        height: 110pt !important;
         width: 100% !important;
         position: relative !important;
+      }
+      .chart-card.full-width-card .chart-wrap {
+        height: 95pt !important;
+        min-height: 95pt !important;
       }
       /* Hard cap on canvas — Chart.js can render at stale on-screen
        * dimensions during print; this guarantees it can't overflow */
@@ -718,6 +698,66 @@
         color: var(--text) !important;
         appearance: none !important;
       }
+
+      /* ---------- Page 2: Google Ads ---------- */
+      /* Repeat the report title at the top of pages 2 and 3 so each
+       * printed page reads on its own when handed around in the office. */
+      #ads-section::before,
+      #fb-section::before {
+        content: attr(data-print-header);
+        display: block;
+        font-size: 12pt;
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 8pt;
+        padding-bottom: 4pt;
+        border-bottom: 1.5px solid var(--border);
+      }
+      #ads-section .card { padding: 12pt 14pt; }
+      .ads-header {
+        display: flex !important;
+        align-items: flex-start !important;
+        margin-bottom: 10pt !important;
+      }
+      .ads-header h2 { font-size: 14pt !important; }
+      .ads-subtitle { font-size: 9pt !important; margin-top: 3pt !important; }
+      .ads-kpi-grid {
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 6pt !important;
+      }
+      .ads-kpi { padding: 8pt 10pt !important; }
+      .ads-kpi .label { font-size: 7.5pt !important; }
+      .ads-kpi .value { font-size: 14pt !important; }
+      .ads-kpi.primary .value { font-size: 16pt !important; }
+      .ads-kpi .sub { font-size: 7.5pt !important; margin-top: 2pt !important; }
+
+      #ads-section .table-scroll,
+      #fb-section .table-scroll {
+        max-height: none !important;
+        overflow: visible !important;
+        margin-top: 12pt !important;
+      }
+      #ads-section table,
+      #fb-section table { font-size: 8.5pt; }
+      #ads-section thead th,
+      #fb-section thead th {
+        background: var(--surface-2) !important;
+        font-size: 8pt;
+      }
+
+      /* ---------- Page 3: Facebook & Instagram Ads ---------- */
+      #fb-section .card { padding: 12pt 14pt; }
+      .fb-campaigns-grid {
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 6pt !important;
+      }
+      .fb-campaign { padding: 9pt 11pt !important; }
+      .fb-campaign h3 { font-size: 11pt !important; margin-bottom: 3pt !important; }
+      .fb-camp-desc { font-size: 8pt !important; margin-bottom: 8pt !important; }
+      .fb-camp-kpis { gap: 4pt !important; margin-bottom: 8pt !important; }
+      .fb-camp-kpis .label { font-size: 7pt !important; }
+      .fb-camp-kpis .value { font-size: 13pt !important; }
+      .fb-camp-detail { font-size: 7.5pt !important; padding-top: 6pt !important; }
     }
   </style>
 </head>
@@ -2427,13 +2467,19 @@ function getPrintPeriodLabel() {
 
 function updatePrintHeader() {
   const periodText = getPrintPeriodLabel();
-  document.getElementById('print-title').textContent =
-    periodText ? `Bostock Leads Report — ${periodText}` : 'Bostock Leads Report';
+  const baseTitle = periodText ? `Bostock Leads Report — ${periodText}` : 'Bostock Leads Report';
+  document.getElementById('print-title').textContent = baseTitle;
   const generated = new Date().toLocaleDateString(undefined, {
     year: 'numeric', month: 'long', day: 'numeric',
   });
   document.getElementById('print-subtitle').textContent =
     `Total leads: ${getActiveRecords().length}  ·  Generated ${generated}`;
+  // Repeat the title at the top of pages 2 and 3 (Google Ads and Facebook
+  // Ads) so each printed page reads on its own.
+  const adsSection = document.getElementById('ads-section');
+  const fbSection  = document.getElementById('fb-section');
+  if (adsSection) adsSection.setAttribute('data-print-header', `${baseTitle}  ·  Google Ads`);
+  if (fbSection)  fbSection.setAttribute('data-print-header',  `${baseTitle}  ·  Facebook & Instagram Ads`);
 }
 document.getElementById('download-pdf').addEventListener('click', () => {
   if (!state.records.length) {
